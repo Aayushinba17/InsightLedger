@@ -176,7 +176,7 @@ def fetch_annual_reports(symbol):
         "functionName": "getCorpAnnualReport",
         "symbol": symbol,
         "marketApiType": "equities",
-        "noOfRecords": 6
+        "noOfRecords": 2
     }
 
     response = session.get(API_URL, params=params)
@@ -246,5 +246,5 @@ def run_scraper(symbols):
 
 
 if __name__ == "__main__":
-    from symbols import get_nifty50_symbols
-    run_scraper(get_nifty50_symbols())
+    from symbols import get_nifty100_symbols
+    run_scraper(get_nifty100_symbols())

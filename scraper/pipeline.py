@@ -1,29 +1,92 @@
 # pipeline.py
 
-from symbols import get_nifty50_symbols
+import json
+from pathlib import Path
+from symbols import get_nifty100_symbols
 from scraper import run_scraper
 from unzip import run_unzip_cleanup
 from quantitative_fetcher import fetch_yfinance_metrics
 from ai_extractor import run_ai_extraction
 
+PROGRESS_PATH = Path(__file__).resolve().parent / "data" / "progress.json"
+
+
+def load_progress():
+    default = {
+        "scraper": False,
+        "scraping_done": False,
+        "unzip_done": False,
+        "quantitative_analysis": False,
+        "quantitative_done": False,
+        "quantitative_completed": [],
+        "quantitative_pending": [],
+        "individual_completed": [],
+        "peer_eval_completed": [],
+        "individual_skipped": []
+    }
+
+    if PROGRESS_PATH.exists():
+        try:
+            with open(PROGRESS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            merged = {**default, **data}
+            if "quantitative_completed" not in merged:
+                merged["quantitative_completed"] = []
+            if "quantitative_pending" not in merged:
+                merged["quantitative_pending"] = []
+            return merged
+        except Exception:
+            return default
+    return default
+
+
+def save_progress(progress):
+    PROGRESS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(PROGRESS_PATH, "w", encoding="utf-8") as f:
+        json.dump(progress, f, indent=2)
+
 
 def run_pipeline():
-    print("Fetching NIFTY 50 symbols...")
-    ##symbols = get_nifty50_symbols()
-    symbols = ["RELIANCE"]
+    print("Fetching NIFTY 100 symbols...")
+    symbols = get_nifty100_symbols()
+    symbols = symbols[:100]  # ensure only the top 100 symbols
     print(f"Found {len(symbols)} companies.")
 
-    print("\nRunning scraper...")
+    progress = load_progress()
+    progress["quantitative_pending"] = symbols.copy()
+
+    print("\nRunning scraper (download 2 records per company)...")
     run_scraper(symbols)
+    progress["scraper"] = True
+    progress["scraping_done"] = True
+    save_progress(progress)
 
     print("\nRunning unzip cleanup...")
     run_unzip_cleanup()
+    progress["unzip_done"] = True
+    save_progress(progress)
 
-    print("Fetching deterministic quantitative metrics (yfinance)...")
-    fetch_yfinance_metrics(symbols)
-    
-    print("\nExtracting qualitative insights from PDFs (Gemini)...")
-    run_ai_extraction(symbols)
+    print("Fetching deterministic quantitative metrics (yfinance) for all NIFTY 100 companies...")
+
+    def _progress_callback(symbol, success):
+        if success and symbol not in progress["quantitative_completed"]:
+            progress["quantitative_completed"].append(symbol)
+        if symbol in progress["quantitative_pending"]:
+            progress["quantitative_pending"].remove(symbol)
+        progress["quantitative_analysis"] = len(progress["quantitative_completed"]) > 0
+        progress["quantitative_done"] = len(progress["quantitative_pending"]) == 0
+        save_progress(progress)
+
+    completed, failed = fetch_yfinance_metrics(symbols, progress_callback=_progress_callback)
+    progress["quantitative_completed"] = completed
+    progress["quantitative_pending"] = [s for s in symbols if s not in completed]
+    progress["quantitative_analysis"] = True
+    progress["quantitative_done"] = len(progress["quantitative_pending"]) == 0
+    save_progress(progress)
+
+    # Optionally run AI extraction for qualitative insights
+    # print("\nExtracting qualitative insights from PDFs (Gemini)...")
+    # run_ai_extraction(symbols)
 
     print("\nPipeline completed successfully.")
 
