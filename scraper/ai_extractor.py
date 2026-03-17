@@ -1,234 +1,677 @@
-import google.generativeai as genai
+import os
+import re
 import json
 import time
-import os
-from dotenv import load_dotenv
-from fpdf import FPDF
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from dotenv import load_dotenv
+import google.generativeai as genai
 
-# 1. CONFIGURE THE API SECURELY
-load_dotenv()  # This loads the variables from your .env file
-api_key = os.getenv("GEMINI_API_KEY")
 
-if not api_key:
-    raise ValueError("API key not found! Please check your .env file.")
+# ============================================================
+# 1. ENVIRONMENT CONFIGURATION
+# ============================================================
 
-genai.configure(api_key=api_key)
+load_dotenv()
 
-# Setup directories
-REPORTS_DIR = Path("data/reports")
-INSIGHTS_DIR = Path("data/qualitative_insights")
+API_KEY = os.getenv("GEMINI_API_KEY")
+
+if not API_KEY:
+    raise ValueError("GEMINI_API_KEY not found in .env")
+
+genai.configure(api_key=API_KEY)
+
+
+# ============================================================
+# 2. DIRECTORY SETUP
+# ============================================================
+
+BASE_DIR = Path(__file__).parent.parent
+SCRAPER_DIR = Path(__file__).parent  # scraper/ directory
+
+REPORTS_DIR = SCRAPER_DIR / "data" / "reports"  # scraper saves reports here
+INSIGHTS_DIR = BASE_DIR / "data" / "qualitative_insights"
+DATA_DIR = BASE_DIR / "data"
+
 INSIGHTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# 2. SET UP THE PROMPT & MODEL
-system_instruction = """
-You are an evidence-first document extraction assistant for financial annual reports. Your job is only to extract structured facts and qualitative judgments from the supplied PDF, and to return a single JSON object matching the schema below.
-Important rules:
 
-Return only valid JSON (no markdown, no explanatory text, no backticks). If you cannot extract a field, return null for that field and "evidence": [].
+# ============================================================
+# 3. LOAD SCHEMAS
+# ============================================================
 
-For every qualitative judgement, score, or assertion, include one or more evidence items with page, quote (exact excerpt), and optional location (e.g., section header or sentence index). Keep quotes verbatim and limit each quote to 400 characters.
+SCHEMA_INDIVIDUAL_PATH = BASE_DIR / "schema_individual.json"
+SCHEMA_PEER_EVAL_PATH = BASE_DIR / "schema_peer_eval.json"
 
-Numeric values must be normalized: return numbers as JSON numbers (no commas), and include currency and units when relevant. If you detect lakhs/crores, convert to plain numbers and set units (e.g., units: "INR", scale: "crore", and normalized_value: 1234500000). If the document does not state currency, set currency to null.
+with open(SCHEMA_INDIVIDUAL_PATH, "r") as f:
+    SCHEMA_INDIVIDUAL = json.dumps(json.load(f), indent=2)
 
-Do not hallucinate: if a fact or metric is not present or uncertain, set that field to null and provide an empty evidence array or an explicit {"note":"not found in document"} inside evidence.
+with open(SCHEMA_PEER_EVAL_PATH, "r") as f:
+    SCHEMA_PEER_EVAL = json.dumps(json.load(f), indent=2)
 
-Use the schema exactly. If a list is empty, return []. If an object field is missing, return null.
 
-Use the fiscal year or report year indicated in the document when assigning report_year. If unclear, return null.
+# ============================================================
+# 4. LOAD PROMPTS
+# ============================================================
 
-For text fields (MD&A summary, Auditor remarks summary, Related party summary), produce short normalized strings (max 200 words each) and attach evidence items.
+def _extract_prompt_block(md_path, heading):
+    """Extract the code block under a given ## heading from a prompt .md file."""
+    text = md_path.read_text(encoding="utf-8")
+    # Find the heading, then capture the code block under it
+    pattern = rf"## {re.escape(heading)}\s*```\s*\n(.*?)```"
+    match = re.search(pattern, text, re.DOTALL)
+    if not match:
+        raise ValueError(f"Could not find '{heading}' code block in {md_path}")
+    return match.group(1).strip()
 
-Provide a confidence score [0.0–1.0] for each major block (Governance, Risk, Growth, Financials) indicating how confident you are that the field is correctly extracted from the document.
 
-Output must validate as JSON and conform to the schema below.
+PROMPT_INDIVIDUAL_PATH = BASE_DIR / "prompt_individual.md"
+PROMPT_PEER_EVAL_PATH = BASE_DIR / "prompt_peer_eval.md"
 
-Schema (enforced): (the model must output JSON matching the schema defined below — examples follow) Do not use markdown tables or special characters that might break PDF formatting.
-{
-  "company": {
-    "name": "string or null",
-    "identifier": { "isin": "string/null", "ticker": "string/null", "cin": "string/null" },
-    "report_year": "YYYY or null"
-  },
-  "metadata": {
-    "pages": "integer or null",
-    "currency": "string or null (e.g., INR, USD)",
-    "units": "string or null (e.g., crore, million, thousand, number)",
-    "fiscal_period": "string or null (e.g., FY2023-24)",
-    "pdf_path": "string or null (path you provided)"
-  },
-  "financials": {
-    "income_statement_summary": {
-      "revenue": { "value": number|null, "currency":"", "units":"", "evidence":[{"page":int,"quote":"..."}] },
-      "net_profit": { "value": number|null, ... },
-      "ebitda": { "value": number|null, ... },
-      "notes": "short string or null",
-      "confidence": number
-    },
-    "balance_sheet_summary": {
-      "total_assets": {...},
-      "total_liabilities": {...},
-      "equity": {...},
-      "notes": "short string or null",
-      "confidence": number
-    },
-    "key_ratios": {
-      "roe": {"value": number|null,"units":"%","evidence":[]},
-      "roce": {...},
-      "debt_to_equity": {...},
-      "current_ratio": {...},
-      "interest_coverage": {...},
-      "confidence": number
-    }
-  },
-  "governance": {
-    "score_1_10": {"value": number|null, "evidence": [{"page":int,"quote":"..."}]},
-    "issues": [{"type":"string","description":"string","evidence":[{"page":int,"quote":"..."}]}],
-    "board_structure": {"chair_and_ceo_separate": boolean|null, "independent_directors_percent": number|null, "board_changes": "short string or null", "evidence":[]},
-    "auditor_opinion": {"type":"unqualified/qualified/adverse/disclaimer/other/null", "text_summary":"string or null", "evidence":[]},
-    "related_party_transactions": {"flagged": boolean, "summary":"string or null","evidence":[]},
-    "confidence": number
-  },
-  "risk_management": {
-    "score_1_10": {"value": number|null,"evidence":[]},
-    "key_risks": [{"risk_type":"string","description":"string","likelihood":"low/medium/high/unknown","evidence":[...]}],
-    "risk_controls_summary":"string or null",
-    "confidence": number
-  },
-  "growth_outlook": {
-    "score_1_10": {"value": number|null,"evidence":[]},
-    "drivers":"short string or null",
-    "management_guidance":"string or null",
-    "capex_plan": {"value": number|null, "currency":"", "units":"", "evidence":[]},
-    "confidence": number
-  },
-  "evidence_index": [
-    {"page": int, "section_heading": "string or null", "text_snippet": "string (<=400 chars)"}
-  ],
-  "summary_comparison_vector": {
-    "numeric_vector": {"valuation": number|null, "growth": number|null, "profitability": number|null, "risk": number|null},
-    "tags": ["DashPick","Watchlist","Avoid","Other"],
-    "confidence": number
-  },
-  "processing": {
-    "warnings": ["strings..."],
-    "errors": [],
-    "extraction_time_seconds": number
-  }
-}
-Rules for scoring & normalization:
+INDIVIDUAL_SYSTEM_PROMPT = _extract_prompt_block(PROMPT_INDIVIDUAL_PATH, "SYSTEM_PROMPT")
+INDIVIDUAL_USER_TEMPLATE = _extract_prompt_block(PROMPT_INDIVIDUAL_PATH, "USER_PROMPT_TEMPLATE")
 
-Scores score_1_10 must be integers 1–10. If you cannot assign integer confidently, set value to null.
+PEER_EVAL_SYSTEM_PROMPT = _extract_prompt_block(PROMPT_PEER_EVAL_PATH, "SYSTEM_PROMPT")
+PEER_EVAL_USER_TEMPLATE = _extract_prompt_block(PROMPT_PEER_EVAL_PATH, "USER_PROMPT_TEMPLATE")
 
-confidence fields are floats 0.0–1.0.
 
-evidence arrays must contain at least one object with page and quote for any non-null field that claims facts.
+# ============================================================
+# 5. INITIALIZE GEMINI MODELS
+# ============================================================
 
-numeric_vector values should be normalized z-score style relative to the document where possible; if not possible, use null. (Your extraction should ensure downstream analytics will be deterministic — raw numbers are most important.)
-"""
-
-model = genai.GenerativeModel(
+individual_model = genai.GenerativeModel(
     model_name="gemini-2.5-flash",
-    system_instruction=system_instruction
+    system_instruction=INDIVIDUAL_SYSTEM_PROMPT
 )
 
-# 3. PDF GENERATOR HELPER FUNCTION
-def create_pdf_report(text_content, save_path):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=11)
-    
-    # Clean text to prevent character encoding errors in FPDF
-    clean_text = text_content.encode('latin-1', 'replace').decode('latin-1')
-    
-    # Write the text to the PDF
-    pdf.multi_cell(0, 6, txt=clean_text)
-    pdf.output(str(save_path))
+peer_eval_model = genai.GenerativeModel(
+    model_name="gemini-2.5-flash",
+    system_instruction=PEER_EVAL_SYSTEM_PROMPT
+)
 
-def process_pdf_with_gemini(pdf_path, symbol):
-    print(f"\nUploading {pdf_path.name} to Gemini...")
+
+# ============================================================
+# 6. PROGRESS TRACKING
+# ============================================================
+
+PROGRESS_FILE = DATA_DIR / "progress.json"
+
+
+def load_progress():
+    """Load progress from file. Returns dict with completed lists."""
+    defaults = {
+        "scraping_done": False,
+        "unzip_done": False,
+        "quantitative_done": False,
+        "individual_completed": [],
+        "peer_eval_completed": []
+    }
+    if PROGRESS_FILE.exists():
+        with open(PROGRESS_FILE, "r") as f:
+            saved = json.load(f)
+        # Merge saved values over defaults (handles old progress files)
+        defaults.update(saved)
+    return defaults
+
+
+def save_progress(progress):
+    """Save progress to file."""
+    with open(PROGRESS_FILE, "w") as f:
+        json.dump(progress, f, indent=2)
+
+
+# ============================================================
+# 7. MOST-RECENT REPORT SELECTION
+# ============================================================
+
+def find_sorted_pdfs(symbol):
+    """
+    Find all annual report PDFs for a symbol, sorted by most recent first.
+
+    Parses PDF filenames to extract year ranges (YYYY_YYYY)
+    and returns a list of tuples: (pdf_path, from_yr, to_yr).
+    """
+    company_folder = REPORTS_DIR / symbol
+
+    if not company_folder.exists():
+        print(f"  No reports folder for {symbol}")
+        return []
+
+    pdf_files = list(company_folder.glob("*.pdf"))
+
+    if not pdf_files:
+        print(f"  No PDF files found for {symbol}")
+        return []
+
+    # Extract year ranges from filenames
+    candidates = []
+    for pdf in pdf_files:
+        # Match patterns like _2023_2024_ or _2024_2025_
+        year_match = re.search(r"(\d{4})_(\d{4})", pdf.stem)
+        if year_match:
+            from_yr = int(year_match.group(1))
+            to_yr = int(year_match.group(2))
+            candidates.append((to_yr, from_yr, pdf))
+
+    if not candidates:
+        # Fallback: return the files without sorting
+        print(f"  Warning: no year pattern found in filenames for {symbol}")
+        return [(0, 0, pdf) for pdf in pdf_files]
+
+    # Sort by to_yr descending, then from_yr descending
+    candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+
+    # Return list of (pdf, from_yr, to_yr)
+    return [(c[2], c[1], c[0]) for c in candidates]
+
+
+# ============================================================
+# 8. GEMINI FILE PROCESSING
+# ============================================================
+
+def upload_and_wait(file_path, mime_type="application/pdf"):
+    """Upload file to Gemini and wait until processing completes."""
+
+    print(f"  Uploading {file_path.name}...")
+
+    uploaded_file = genai.upload_file(
+        path=file_path,
+        mime_type=mime_type
+    )
+
+    print("  Waiting for Gemini to process", end="")
+
+    while True:
+        file_info = genai.get_file(uploaded_file.name)
+
+        if file_info.state.name == "PROCESSING":
+            print(".", end="", flush=True)
+            time.sleep(5)
+        elif file_info.state.name == "ACTIVE":
+            print("\n  Document ready.")
+            break
+        elif file_info.state.name == "FAILED":
+            raise RuntimeError("Gemini failed to process the file.")
+
+    return uploaded_file
+
+
+def save_json_report(text_content, save_path):
+    """Parse AI output as JSON and save to file."""
+
+    cleaned = text_content.strip()
+
+    # Strip markdown code fences if present
+    if cleaned.startswith("```"):
+        # Remove opening fence (e.g. ```json or ```)
+        first_newline = cleaned.index("\n")
+        cleaned = cleaned[first_newline + 1:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3].strip()
 
     try:
-        # Upload the file to Gemini's temporary storage
-        uploaded_file = genai.upload_file(
-            path=pdf_path, mime_type="application/pdf")
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        print(f"  WARNING: JSON parse failed — {e}")
+        print(f"  Output may be truncated. Saving as raw_output.")
+        parsed = {"raw_output": cleaned, "parse_error": str(e)}
 
-        # --- NEW POLLING LOGIC ---
-        print("Waiting for Google servers to process the document", end="")
-        while True:
-            # Check the current state of the file
-            file_info = genai.get_file(uploaded_file.name)
+    with open(save_path, "w", encoding="utf-8") as f:
+        json.dump(parsed, f, indent=2, ensure_ascii=False)
 
-            if file_info.state.name == "PROCESSING":
-                print(".", end="", flush=True)
-                time.sleep(5)  # Wait 5 seconds and check again
-            elif file_info.state.name == "ACTIVE":
-                print("\nDocument is ready!")
-                break
-            elif file_info.state.name == "FAILED":
-                print("\nDocument processing failed on Google's end. Skipping.")
-                return  # Exit the function for this specific file
-        # -------------------------
 
-        print("Extracting insights (this may take 1-2 minutes for large PDFs)...")
+# ============================================================
+# 9. PHASE 1 — INDIVIDUAL COMPANY EXTRACTION
+# ============================================================
 
-        print("Generating 1-10 scaled report (this may take 1-2 minutes)...")
+def process_individual_company(pdf_path, symbol):
+    """Process a single company's annual report with the individual prompt."""
 
-        # Call the model (Notice we removed the JSON response_schema)
-        response = model.generate_content(
-            [uploaded_file, "Generate the normalized scoring report based on your system instructions."],
+    uploaded_file = None
+
+    try:
+        uploaded_file = upload_and_wait(pdf_path)
+
+        print(f"  Generating individual analysis for {symbol}...")
+
+        user_prompt = INDIVIDUAL_USER_TEMPLATE.replace("{schema}", SCHEMA_INDIVIDUAL)
+        
+        # Load the quantitative data if available
+        quant_file = DATA_DIR / "quantitative" / f"{symbol}_quant.json"
+        if quant_file.exists():
+            print(f"  Found quantitative data for {symbol}, inserting into prompt.")
+            with open(quant_file, "r") as f:
+                quant_data = f.read()
+            user_prompt += f"\n\nHere is the externally sourced quantitative data for this company:\n```json\n{quant_data}\n```\nUse this data to fill in the financial, valuation, and metadata fields exactly as provided."
+
+        response = individual_model.generate_content(
+            [uploaded_file, user_prompt],
             request_options={"timeout": 600},
             generation_config=genai.GenerationConfig(
-                temperature=0.1 # Keep this low so it relies on facts, not hallucination
+                temperature=0.1,
+                response_mime_type="application/json",
+                max_output_tokens=65536
             )
         )
 
-        # Save as PDF instead of JSON
-        company_insight_dir = INSIGHTS_DIR / symbol
-        company_insight_dir.mkdir(exist_ok=True)
-        
-        # Change the extension to .pdf
-        pdf_save_path = company_insight_dir / f"{pdf_path.stem}_AI_Report.pdf"
-        
-        # Call the new PDF function
-        create_pdf_report(response.text, pdf_save_path)
+        # Save output
+        company_dir = INSIGHTS_DIR / symbol
+        company_dir.mkdir(exist_ok=True)
 
-        print(f"Successfully saved AI PDF report to {pdf_save_path.name}")
+        save_path = company_dir / f"{symbol}_individual.json"
+        save_json_report(response.text, save_path)
+
+        print(f"  Saved → {save_path.name}")
+        return True
 
     except Exception as e:
-        print(f"Error analyzing {pdf_path.name}: {e}")
+        print(f"  ERROR analyzing {symbol}: {e}")
+        raise  # Re-raise so the caller can handle it
 
     finally:
-        # ALWAYS clean up the file from Gemini's servers
-        try:
-            genai.delete_file(uploaded_file.name)
-            print("Deleted file from Gemini servers.")
-        except:
-            pass
+        if uploaded_file:
+            try:
+                genai.delete_file(uploaded_file.name)
+            except:
+                pass
 
 
 def run_ai_extraction(symbols):
-    """Iterates through all downloaded PDFs for the given symbols and extracts insights."""
-    for symbol in symbols:
-        company_folder = REPORTS_DIR / symbol
-        if not company_folder.exists():
-            print(f"No reports folder found for {symbol}. Skipping.")
+    """
+    Phase 1: Run individual analysis for all symbols.
+
+    Processing cadence:
+    - 1 company → 15 second rest → next company → ...
+    - After every 10th company → 2 minute rest
+
+    On rate-limit / quota errors: save progress and stop.
+    On other errors (e.g. oversized PDF): skip the company and continue.
+    """
+
+    progress = load_progress()
+    completed = set(progress["individual_completed"])
+    skipped = progress.get("individual_skipped", [])
+
+    # Filter out already-completed symbols
+    remaining = [s for s in symbols if s not in completed]
+
+    if not remaining:
+        print("\nPhase 1: All individual analyses already complete.")
+        return True
+
+    print(f"\nPhase 1: Individual Analysis")
+    print(f"  {len(completed)} already done, {len(remaining)} remaining\n")
+
+    count_in_batch = 0  # Tracks position within current batch of 10
+
+    for i, symbol in enumerate(remaining):
+        print(f"[{len(completed) + 1}/{len(symbols)}] Processing {symbol}...")
+
+        # Find all PDFs sorted by recentness
+        sorted_pdfs = find_sorted_pdfs(symbol)
+
+        if not sorted_pdfs:
+            print(f"  Skipping {symbol} — no PDF found\n")
             continue
 
-        # Find all PDFs for this company
-        pdf_files = list(company_folder.glob("*.pdf"))
+        success = False
+        rate_limit_hit = False
 
-        for pdf_path in pdf_files:
-            process_pdf_with_gemini(pdf_path, symbol)
-            # Add a small delay to avoid hitting Gemini API rate limits
-            time.sleep(15)
+        for pdf_path, from_yr, to_yr in sorted_pdfs:
+            if from_yr and to_yr:
+                print(f"  Selected: {pdf_path.name} (FY {from_yr}-{to_yr})")
+            else:
+                print(f"  Selected: {pdf_path.name}")
+                
+            # Check file size — warn if very large
+            file_size_mb = pdf_path.stat().st_size / (1024 * 1024)
+            if file_size_mb > 100:
+                print(f"  WARNING: PDF is {file_size_mb:.0f} MB — may be too large for Gemini")
 
+            try:
+                success = process_individual_company(pdf_path, symbol)
+
+                if success:
+                    progress["individual_completed"].append(symbol)
+                    completed.add(symbol)
+                    save_progress(progress)
+                    break # Success! Break out of the PDF fallback loop
+
+            except Exception as e:
+                error_str = str(e)
+
+                # Rate-limit / quota errors → halt pipeline (retry later)
+                if "429" in error_str or "ResourceExhausted" in error_str or "quota" in error_str.lower():
+                    print(f"\n*** Rate limit / quota error. Saving progress and stopping. ***")
+                    print(f"*** Error: {e} ***")
+                    print(f"*** Completed {len(completed)}/{len(symbols)} companies ***")
+                    save_progress(progress)
+                    rate_limit_hit = True
+                    break
+
+                # Transient errors (504 timeout, 503, DeadlineExceeded) → retry once
+                is_transient = ("504" in error_str or "503" in error_str
+                                or "timed out" in error_str.lower()
+                                or "DeadlineExceeded" in error_str)
+
+                if is_transient:
+                    print(f"  ⏳ Transient error for {symbol}, retrying in 30s...")
+                    time.sleep(30)
+                    try:
+                        success = process_individual_company(pdf_path, symbol)
+                        if success:
+                            progress["individual_completed"].append(symbol)
+                            completed.add(symbol)
+                            save_progress(progress)
+                            break
+                    except Exception as retry_e:
+                        print(f"  ⚠ Retry also failed for {symbol} on {pdf_path.name} — {retry_e}")
+
+                # If we get here, this specific PDF failed. Move on to the next one.
+                print(f"  ⚠ Skipping document {pdf_path.name} for {symbol} — {e}\n")
+
+        if rate_limit_hit:
+            return False
+            
+        if not success:
+            print(f"  ⚠ All documents failed for {symbol}. Skipping company entirely.\n")
+            if symbol not in skipped:
+                skipped.append(symbol)
+            progress["individual_skipped"] = skipped
+            save_progress(progress)
+            continue
+
+        count_in_batch += 1
+
+        # Check if this is the last symbol (no rest needed)
+        if i < len(remaining) - 1:
+            if count_in_batch % 10 == 0:
+                print(f"\n  Batch of 10 complete. Resting for 2 minutes...\n")
+                time.sleep(120)
+            else:
+                print(f"  Resting for 15 seconds...\n")
+                time.sleep(15)
+
+    if skipped:
+        print(f"\n  ⚠ Skipped {len(skipped)} companies due to errors: {', '.join(skipped)}")
+
+    print(f"\nPhase 1 complete. {len(completed)}/{len(symbols)} companies processed.")
+    return True
+
+
+# ============================================================
+# 10. PHASE 2 — PEER GROUP EVALUATION
+# ============================================================
+
+CONCATENATED_FILE = DATA_DIR / "nifty50_all_individual.json"
+UPLOAD_META_FILE = DATA_DIR / "upload_meta.json"
+
+
+def concatenate_individual_jsons(symbols):
+    """
+    Concatenate all individual JSONs into a single file.
+    This is a ONE-TIME operation — the file is created once and persisted.
+    """
+
+    if CONCATENATED_FILE.exists():
+        print("  Concatenated file already exists. Skipping concatenation.")
+        return
+
+    print("  Concatenating all individual JSONs...")
+
+    companies = {}
+
+    for symbol in symbols:
+        individual_path = INSIGHTS_DIR / symbol / f"{symbol}_individual.json"
+
+        if individual_path.exists():
+            with open(individual_path, "r", encoding="utf-8") as f:
+                companies[symbol] = json.load(f)
+        else:
+            print(f"    Warning: No individual JSON for {symbol}")
+
+    concatenated = {
+        "created_at": datetime.now(timezone(timedelta(hours=5, minutes=30))).isoformat(),
+        "companies": companies
+    }
+
+    with open(CONCATENATED_FILE, "w", encoding="utf-8") as f:
+        json.dump(concatenated, f, indent=2, ensure_ascii=False)
+
+    print(f"  Saved concatenated file with {len(companies)} companies.")
+
+
+def get_or_upload_concatenated_file():
+    """
+    Upload the concatenated JSON to Gemini's server if needed.
+
+    Logic:
+    - If upload_meta.json exists and created_at is within 36 hours → reuse
+    - Otherwise → re-upload (but do NOT re-concatenate)
+    """
+
+    need_upload = True
+
+    if UPLOAD_META_FILE.exists():
+        with open(UPLOAD_META_FILE, "r") as f:
+            meta = json.load(f)
+
+        created_at = datetime.fromisoformat(meta["created_at"])
+        now = datetime.now(timezone(timedelta(hours=5, minutes=30)))
+        age_hours = (now - created_at).total_seconds() / 3600
+
+        if age_hours < 36:
+            print(f"  Reusing uploaded file (uploaded {age_hours:.1f} hours ago)")
+            # Verify the file still exists on Gemini's server
+            try:
+                file_info = genai.get_file(meta["gemini_file_name"])
+                if file_info.state.name == "ACTIVE":
+                    need_upload = False
+                    return meta["gemini_file_name"]
+                else:
+                    print(f"  File no longer active on server. Re-uploading...")
+            except Exception:
+                print(f"  Could not find file on server. Re-uploading...")
+
+    if need_upload:
+        print("  Uploading concatenated file to Gemini server...")
+
+        uploaded_file = upload_and_wait(
+            CONCATENATED_FILE,
+            mime_type="application/json"
+        )
+
+        # Save upload metadata
+        meta = {
+            "created_at": datetime.now(timezone(timedelta(hours=5, minutes=30))).isoformat(),
+            "gemini_file_name": uploaded_file.name
+        }
+
+        with open(UPLOAD_META_FILE, "w") as f:
+            json.dump(meta, f, indent=2)
+
+        return uploaded_file.name
+
+
+def process_peer_evaluation(symbol, gemini_file_name):
+    """Run peer evaluation for a single company."""
+
+    # Load target company info from individual JSON
+    individual_path = INSIGHTS_DIR / symbol / f"{symbol}_individual.json"
+
+    if not individual_path.exists():
+        print(f"  No individual JSON for {symbol}. Skipping.")
+        return False
+
+    with open(individual_path, "r", encoding="utf-8") as f:
+        individual_data = json.load(f)
+
+    company_name = individual_data.get("company_metadata", {}).get("company_name", symbol)
+    ticker = symbol
+
+    print(f"  Generating peer evaluation for {company_name} ({ticker})...")
+
+    # Get the uploaded file reference
+    uploaded_file = genai.get_file(gemini_file_name)
+
+    # Build user prompt
+    user_prompt = PEER_EVAL_USER_TEMPLATE.replace(
+        "{company_name}", company_name
+    ).replace(
+        "{ticker}", ticker
+    ).replace(
+        "{schema}", SCHEMA_PEER_EVAL
+    )
+
+    response = peer_eval_model.generate_content(
+        [uploaded_file, user_prompt],
+        request_options={"timeout": 600},
+        generation_config=genai.GenerationConfig(
+            temperature=0.1,
+            response_mime_type="application/json",
+            max_output_tokens=65536
+        )
+    )
+
+    # Save output
+    company_dir = INSIGHTS_DIR / symbol
+    company_dir.mkdir(exist_ok=True)
+
+    save_path = company_dir / f"{symbol}_peereval.json"
+    save_json_report(response.text, save_path)
+
+    print(f"  Saved → {save_path.name}")
+    return True
+
+
+def run_peer_evaluation(symbols):
+    """
+    Phase 2: Run peer evaluation for all symbols.
+
+    Prerequisites: All individual JSONs must exist.
+    Concatenates once, uploads to Gemini server with 36hr TTL caching.
+
+    Same processing cadence as Phase 1:
+    - 1 company → 15s → next → ... → after 10th → 2 min rest
+    """
+
+    progress = load_progress()
+    completed_individual = set(progress["individual_completed"])
+    completed_peer = set(progress["peer_eval_completed"])
+
+    # Check that all individual analyses exist
+    missing = [s for s in symbols if s not in completed_individual]
+    if missing:
+        print(f"\nPhase 2: Cannot start — {len(missing)} companies missing individual analysis:")
+        for s in missing[:10]:
+            print(f"  - {s}")
+        if len(missing) > 10:
+            print(f"  ... and {len(missing) - 10} more")
+        return False
+
+    remaining = [s for s in symbols if s not in completed_peer]
+
+    if not remaining:
+        print("\nPhase 2: All peer evaluations already complete.")
+        return True
+
+    print(f"\nPhase 2: Peer Evaluation")
+    print(f"  {len(completed_peer)} already done, {len(remaining)} remaining\n")
+
+    # Step 1: Concatenate (one-time)
+    concatenate_individual_jsons(symbols)
+
+    # Step 2: Upload or reuse
+    try:
+        gemini_file_name = get_or_upload_concatenated_file()
+    except Exception as e:
+        print(f"\n*** Error uploading concatenated file: {e} ***")
+        save_progress(progress)
+        return False
+
+    # Step 3: Process each company
+    count_in_batch = 0
+
+    for i, symbol in enumerate(remaining):
+        print(f"[{len(completed_peer) + 1}/{len(symbols)}] Peer eval for {symbol}...")
+
+        try:
+            success = process_peer_evaluation(symbol, gemini_file_name)
+
+            if success:
+                progress["peer_eval_completed"].append(symbol)
+                completed_peer.add(symbol)
+                save_progress(progress)
+
+        except Exception as e:
+            error_str = str(e)
+            
+            # Rate-limit / quota errors
+            if "429" in error_str or "ResourceExhausted" in error_str or "quota" in error_str.lower():
+                print(f"\n*** Rate limit / quota error. Saving progress and stopping. ***")
+                print(f"*** Error: {e} ***")
+                save_progress(progress)
+                return False
+                
+            # Transient errors (500 Internal Error, 503, 504)
+            is_transient = ("500" in error_str or "503" in error_str or "504" in error_str
+                            or "timed out" in error_str.lower()
+                            or "DeadlineExceeded" in error_str)
+                            
+            if is_transient:
+                print(f"  ⏳ Transient server error ({error_str[:3]}) for {symbol}, retrying in 60s...")
+                time.sleep(60)
+                try:
+                    success = process_peer_evaluation(symbol, gemini_file_name)
+                    if success:
+                        progress["peer_eval_completed"].append(symbol)
+                        completed_peer.add(symbol)
+                        save_progress(progress)
+                        count_in_batch += 1
+                        if i < len(remaining) - 1:
+                            if count_in_batch % 10 == 0:
+                                print(f"\n  Batch of 10 complete. Resting for 2 minutes...\n")
+                                time.sleep(120)
+                            else:
+                                print(f"  Resting for 15 seconds...\n")
+                                time.sleep(15)
+                        continue
+                except Exception as retry_e:
+                    print(f"  ⚠ Retry also failed for {symbol} — {retry_e}")
+
+            # If not transient, or if retry failed, skip or stop
+            print(f"\n*** Unrecoverable Gemini API error for {symbol}. Stopping. ***")
+            print(f"*** Error: {e} ***")
+            save_progress(progress)
+            return False
+
+        count_in_batch += 1
+
+        # Check if this is the last symbol
+        if i < len(remaining) - 1:
+            if count_in_batch % 10 == 0:
+                print(f"\n  Batch of 10 complete. Resting for 2 minutes...\n")
+                time.sleep(120)
+            else:
+                print(f"  Resting for 15 seconds...\n")
+                time.sleep(15)
+
+    print(f"\nPhase 2 complete. {len(completed_peer)}/{len(symbols)} peer evaluations done.")
+    return True
+
+
+# ============================================================
+# 11. LOCAL TEST
+# ============================================================
 
 if __name__ == "__main__":
-    # Test with one specific PDF downloaded by your scraper
-    # Update this path to an actual PDF in your data folder
-    sample_pdf = Path("data/reports/RELIANCE/AR_2021_2022.pdf")
-    if sample_pdf.exists():
-        process_pdf_with_gemini(sample_pdf, "RELIANCE")
-    else:
-        print("Please provide a valid PDF path to test.")
+
+    # Test with a single symbol
+    test_symbols = ["RELIANCE"]
+
+    print("=== Phase 1: Individual Analysis ===")
+    phase1_ok = run_ai_extraction(test_symbols)
+
+    if phase1_ok:
+        print("\n=== Phase 2: Peer Evaluation ===")
+        run_peer_evaluation(test_symbols)
