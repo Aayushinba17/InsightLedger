@@ -232,18 +232,11 @@ def process_individual_company(pdf_path, symbol):
     try:
         uploaded_file = upload_and_wait(pdf_path)
 
-        print(f"  Generating individual analysis for {symbol}...")
+        print(f"  Generating qualitative analysis for {symbol}...")
 
         user_prompt = INDIVIDUAL_USER_TEMPLATE.replace("{schema}", SCHEMA_INDIVIDUAL)
         
-        # Load the quantitative data if available
-        quant_file = DATA_DIR / "quantitative" / f"{symbol}_quant.json"
-        if quant_file.exists():
-            print(f"  Found quantitative data for {symbol}, inserting into prompt.")
-            with open(quant_file, "r") as f:
-                quant_data = f.read()
-            user_prompt += f"\n\nHere is the externally sourced quantitative data for this company:\n```json\n{quant_data}\n```\nUse this data to fill in the financial, valuation, and metadata fields exactly as provided."
-
+        # 1. Ask Gemini to generate ONLY the Qualitative Data (Saves Tokens)
         response = individual_model.generate_content(
             [uploaded_file, user_prompt],
             request_options={"timeout": 600},
@@ -254,14 +247,38 @@ def process_individual_company(pdf_path, symbol):
             )
         )
 
-        # Save output
+        # 2. Parse the LLM's Qualitative JSON output
+        cleaned = response.text.strip()
+        if cleaned.startswith("```"):
+            first_newline = cleaned.index("\n")
+            cleaned = cleaned[first_newline + 1:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3].strip()
+
+        try:
+            final_data = json.loads(cleaned)
+        except json.JSONDecodeError as e:
+            print(f"  WARNING: JSON parse failed — {e}")
+            final_data = {"raw_output": cleaned, "parse_error": str(e)}
+
+        # 3. MERGE Quantitative Data via Python (100% accurate, no hallucination risk)
+        quant_file = DATA_DIR / "quantitative" / f"{symbol}_quant.json"
+        if quant_file.exists():
+            with open(quant_file, "r") as f:
+                quant_data = json.load(f)
+            
+            # Attach the Recent and Historical data cleanly to the final payload
+            final_data["quantitative_data"] = quant_data
+
+        # 4. Save combined output
         company_dir = INSIGHTS_DIR / symbol
         company_dir.mkdir(exist_ok=True)
 
         save_path = company_dir / f"{symbol}_individual.json"
-        save_json_report(response.text, save_path)
+        with open(save_path, "w", encoding="utf-8") as f:
+            json.dump(final_data, f, indent=2, ensure_ascii=False)
 
-        print(f"  Saved → {save_path.name}")
+        print(f"  Saved combined report → {save_path.name}")
         return True
 
     except Exception as e:
