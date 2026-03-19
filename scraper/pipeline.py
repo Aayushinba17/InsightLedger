@@ -1,10 +1,5 @@
 # pipeline.py
 
-<<<<<<< HEAD
-=======
-import json
-from pathlib import Path
->>>>>>> 7b1047652d4959cb54a5f50dee8b98e7392a47dc
 from symbols import get_nifty100_symbols
 from scraper import run_scraper
 from unzip import run_unzip_cleanup
