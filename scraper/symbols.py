@@ -103,6 +103,7 @@ def get_nifty100_symbols():
         if stock.get("symbol") and stock["symbol"] != "NIFTY 100"
     ]
 
+    # Return as many as available (nifty lists are typically 50/100/500)
     return symbols
 
 if __name__ == "__main__":
