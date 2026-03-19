@@ -1,6 +1,6 @@
 # pipeline.py
 
-from symbols import get_nifty50_symbols
+from symbols import get_nifty100_symbols
 from scraper import run_scraper
 from unzip import run_unzip_cleanup
 from quantitative_fetcher import fetch_yfinance_metrics
@@ -8,8 +8,11 @@ from ai_extractor import run_ai_extraction, run_peer_evaluation, load_progress, 
 
 
 def run_pipeline():
-    print("Fetching NIFTY 50 symbols...")
-    symbols = get_nifty50_symbols()
+    print("Fetching NIFTY 100 symbols...")
+    symbols = get_nifty100_symbols()
+    symbols=symbols[80:100]
+    if "LICI" in symbols:
+        symbols.remove("LICI")
     print(f"Found {len(symbols)} companies.")
 
     progress = load_progress()
@@ -57,15 +60,15 @@ def run_pipeline():
     # ========================================
     # Phase 2: Peer group evaluation
     # ========================================
-    print("\n" + "=" * 60)
-    print("PHASE 2: Peer Group Evaluation (Gemini)")
-    print("=" * 60)
+#     print("\n" + "=" * 60)
+#     print("PHASE 2: Peer Group Evaluation (Gemini)")
+#     print("=" * 60)
 
-    phase2_ok = run_peer_evaluation(symbols)
+#     phase2_ok = run_peer_evaluation(symbols)
 
-    if not phase2_ok:
-        print("\nPhase 2 interrupted. Re-run pipeline to resume from where it stopped.")
-        return
+#     if not phase2_ok:
+#         print("\nPhase 2 interrupted. Re-run pipeline to resume from where it stopped.")
+#         return
 
     print("\n" + "=" * 60)
     print("Pipeline completed successfully.")
