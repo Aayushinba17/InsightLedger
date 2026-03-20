@@ -10,7 +10,7 @@
         "industry_position": ""
     },
     "business_quality_signals": {
-        "BQ": null,
+        "BQ": "integer score from 0 to 100",
         "factors_considered": {
             "competitive_moat": "none | weak | moderate | strong | dominant",
             "pricing_power": "none | low | moderate | high",
@@ -20,7 +20,7 @@
         "reasoning_points": []
     },
     "cyclicality_signals": {
-        "CY": null,
+        "CY": "integer score from 0 to 100",
         "factors_considered": {
             "demand_stability": "volatile | cyclical | moderately_stable | stable | highly_stable",
             "commodity_exposure": "high | moderate | low | none",
@@ -30,7 +30,7 @@
         "reasoning_points": []
     },
     "return_profile_signals": {
-        "RP": null,
+        "RP": "integer score from 0 to 100",
         "factors_considered": {
             "growth_potential": "declining | low | moderate | high | very_high",
             "innovation_intensity": "none | low | moderate | high",
@@ -44,7 +44,7 @@
         "reasoning_points": []
     },
     "governance_signals": {
-        "BG": null,
+        "BG": "integer score from 0 to 100",
         "factors_considered": {
             "leverage_level": "dangerous | high | moderate | low | debt_free",
             "liquidity_position": "weak | adequate | strong | very_strong",
@@ -66,28 +66,28 @@
             {
                 "risk": "",
                 "severity": "high | medium | low",
-                "evidence": ""
+                "evidence": {"pg": "", "quote": ""}
             }
         ],
         "financial_risks": [
             {
                 "risk": "",
                 "severity": "high | medium | low",
-                "evidence": ""
+                "evidence": {"pg": "", "quote": ""}
             }
         ],
         "industry_risks": [
             {
                 "risk": "",
                 "severity": "high | medium | low",
-                "evidence": ""
+                "evidence": {"pg": "", "quote": ""}
             }
         ],
         "regulatory_risks": [
             {
                 "risk": "",
                 "severity": "high | medium | low",
-                "evidence": ""
+                "evidence": {"pg": "", "quote": ""}
             }
         ]
     },

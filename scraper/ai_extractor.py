@@ -33,6 +33,7 @@ REPORTS_DIR = SCRAPER_DIR / "data" / "reports"  # scraper saves reports here
 INSIGHTS_DIR = BASE_DIR / "data" / "qualitative_insights"
 DATA_DIR = BASE_DIR / "data"
 
+INSIGHTS_DIR = BASE_DIR / "data" / "qualitative_insights"
 INSIGHTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -40,14 +41,18 @@ INSIGHTS_DIR.mkdir(parents=True, exist_ok=True)
 # 3. LOAD SCHEMAS
 # ============================================================
 
-SCHEMA_INDIVIDUAL_PATH = BASE_DIR / "schema_individual.json"
-SCHEMA_PEER_EVAL_PATH = BASE_DIR / "schema_peer_eval.json"
+SCHEMA_INDIVIDUAL_PATH = SCRAPER_DIR / "schema_individual.json"
+SCHEMA_PEER_EVAL_PATH = SCRAPER_DIR / "schema_peer_eval.json"
 
 with open(SCHEMA_INDIVIDUAL_PATH, "r") as f:
     SCHEMA_INDIVIDUAL = json.dumps(json.load(f), indent=2)
 
-with open(SCHEMA_PEER_EVAL_PATH, "r") as f:
-    SCHEMA_PEER_EVAL = json.dumps(json.load(f), indent=2)
+if SCHEMA_PEER_EVAL_PATH.exists():
+    with open(SCHEMA_PEER_EVAL_PATH, "r") as f:
+        SCHEMA_PEER_EVAL = json.dumps(json.load(f), indent=2)
+else:
+    print("WARNING: schema_peer_eval.json not found, peer evaluation disabled.")
+    SCHEMA_PEER_EVAL = "{}"
 
 
 # ============================================================
@@ -65,14 +70,19 @@ def _extract_prompt_block(md_path, heading):
     return match.group(1).strip()
 
 
-PROMPT_INDIVIDUAL_PATH = BASE_DIR / "prompt_individual.md"
-PROMPT_PEER_EVAL_PATH = BASE_DIR / "prompt_peer_eval.md"
+PROMPT_INDIVIDUAL_PATH = SCRAPER_DIR / "prompt_individual.md"
+PROMPT_PEER_EVAL_PATH = SCRAPER_DIR / "prompt_peer_eval.md"
 
 INDIVIDUAL_SYSTEM_PROMPT = _extract_prompt_block(PROMPT_INDIVIDUAL_PATH, "SYSTEM_PROMPT")
 INDIVIDUAL_USER_TEMPLATE = _extract_prompt_block(PROMPT_INDIVIDUAL_PATH, "USER_PROMPT_TEMPLATE")
 
-PEER_EVAL_SYSTEM_PROMPT = _extract_prompt_block(PROMPT_PEER_EVAL_PATH, "SYSTEM_PROMPT")
-PEER_EVAL_USER_TEMPLATE = _extract_prompt_block(PROMPT_PEER_EVAL_PATH, "USER_PROMPT_TEMPLATE")
+if PROMPT_PEER_EVAL_PATH.exists():
+    PEER_EVAL_SYSTEM_PROMPT = _extract_prompt_block(PROMPT_PEER_EVAL_PATH, "SYSTEM_PROMPT")
+    PEER_EVAL_USER_TEMPLATE = _extract_prompt_block(PROMPT_PEER_EVAL_PATH, "USER_PROMPT_TEMPLATE")
+else:
+    print("WARNING: prompt_peer_eval.md not found, peer evaluation disabled.")
+    PEER_EVAL_SYSTEM_PROMPT = "Peer evaluation not configured."
+    PEER_EVAL_USER_TEMPLATE = ""
 
 
 # ============================================================
@@ -234,9 +244,24 @@ def process_individual_company(pdf_path, symbol):
 
         print(f"  Generating qualitative analysis for {symbol}...")
 
-        user_prompt = INDIVIDUAL_USER_TEMPLATE.replace("{schema}", SCHEMA_INDIVIDUAL)
-        
-        # 1. Ask Gemini to generate ONLY the Qualitative Data (Saves Tokens)
+        # Build user prompt with explicit analysis/tagging instruction
+        analysis_tagging_instruction = (
+            "Perform evidence-based qualitative analysis and tag your output clearly. "
+            "Return exactly one JSON object following the schema."
+        )
+        user_prompt = (
+            f"{analysis_tagging_instruction}\n\n"
+            + INDIVIDUAL_USER_TEMPLATE.replace("{schema}", SCHEMA_INDIVIDUAL)
+        )
+
+        # Load the quantitative data if available
+        quant_file = DATA_DIR / "quantitative" / f"{symbol}_quant.json"
+        if quant_file.exists():
+            print(f"  Found quantitative data for {symbol}, inserting into prompt.")
+            with open(quant_file, "r") as f:
+                quant_data = f.read()
+            user_prompt += f"\n\nHere is the externally sourced quantitative data for this company:\n```json\n{quant_data}\n```\nUse this data to fill in the financial, valuation, and metadata fields exactly as provided."
+
         response = individual_model.generate_content(
             [uploaded_file, user_prompt],
             request_options={"timeout": 600},
@@ -309,6 +334,18 @@ def run_ai_extraction(symbols):
     completed = set(progress["individual_completed"])
     skipped = progress.get("individual_skipped", [])
 
+    # Auto-mark completed for companies with existing individual JSON output
+    for symbol in symbols:
+        individual_path = INSIGHTS_DIR / symbol / f"{symbol}_individual.json"
+        if individual_path.exists() and symbol not in completed:
+            print(f"  Found existing output for {symbol}, marking as completed.")
+            completed.add(symbol)
+            if symbol in skipped:
+                skipped.remove(symbol)
+            progress["individual_completed"].append(symbol)
+            progress["individual_skipped"] = skipped
+            save_progress(progress)
+
     # Filter out already-completed symbols
     remaining = [s for s in symbols if s not in completed]
 
@@ -339,17 +376,21 @@ def run_ai_extraction(symbols):
                 print(f"  Selected: {pdf_path.name} (FY {from_yr}-{to_yr})")
             else:
                 print(f"  Selected: {pdf_path.name}")
-                
-            # Check file size — warn if very large
+
+            # Check file size — skip if too large
             file_size_mb = pdf_path.stat().st_size / (1024 * 1024)
             if file_size_mb > 100:
-                print(f"  WARNING: PDF is {file_size_mb:.0f} MB — may be too large for Gemini")
+                print(f"  WARNING: PDF is {file_size_mb:.0f} MB — skipping this file and trying next available PDF.")
+                continue
 
             try:
                 success = process_individual_company(pdf_path, symbol)
 
                 if success:
-                    progress["individual_completed"].append(symbol)
+                    if symbol not in progress.get("individual_completed", []):
+                        progress["individual_completed"].append(symbol)
+                    if symbol in progress.get("individual_skipped", []):
+                        progress["individual_skipped"].remove(symbol)
                     completed.add(symbol)
                     save_progress(progress)
                     break # Success! Break out of the PDF fallback loop
@@ -414,6 +455,26 @@ def run_ai_extraction(symbols):
 
     print(f"\nPhase 1 complete. {len(completed)}/{len(symbols)} companies processed.")
     return True
+
+
+def rerun_skipped_individuals():
+    """Re-run individual analysis for companies listed in progress.individual_skipped."""
+    progress = load_progress()
+    skipped = progress.get("individual_skipped", [])
+    if not skipped:
+        print("No skipped companies to re-run.")
+        return True
+
+    print(f"Re-running individual extraction for {len(skipped)} skipped companies.")
+    result = run_ai_extraction(skipped)
+
+    # After run, remove any companies now in completed from skipped
+    progress = load_progress()
+    completed = set(progress.get("individual_completed", []))
+    progress["individual_skipped"] = [s for s in progress.get("individual_skipped", []) if s not in completed]
+    save_progress(progress)
+
+    return result
 
 
 # ============================================================
