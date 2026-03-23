@@ -1,0 +1,74 @@
+{
+  "type": "object",
+  "required": [
+    "industry",
+    "companies_count",
+    "rankings"
+  ],
+  "properties": {
+    "industry": {
+      "type": "string"
+    },
+    "companies_count": {
+      "type": "integer"
+    },
+    "rankings": {
+      "type": "object",
+      "required": [
+        "fundamental_investor",
+        "value_investor",
+        "growth_investor",
+        "safety_investor"
+      ],
+      "properties": {
+        "fundamental_investor": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/company_rank"
+          }
+        },
+        "value_investor": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/company_rank"
+          }
+        },
+        "growth_investor": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/company_rank"
+          }
+        },
+        "safety_investor": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/company_rank"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "company_rank": {
+      "type": "object",
+      "required": [
+        "company",
+        "score",
+        "rank"
+      ],
+      "properties": {
+        "company": {
+          "type": "string"
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "rank": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

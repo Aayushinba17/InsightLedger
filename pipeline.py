@@ -1,16 +1,26 @@
-# pipeline.py
+"""
+Main Execution Pipeline for InsightLedger
+Orchestrates scraping, AI extraction, data merging, peer evaluation, and database upload.
+"""
 
+import json
+from pathlib import Path
+
+# Implemented pipeline modules
 from symbols import get_nifty100_symbols
 from scraper import run_scraper
 from unzip import run_unzip_cleanup
 from quantitative_fetcher import fetch_yfinance_metrics
-from ai_extractor import run_ai_extraction
+from scraper.ai_extractor import run_ai_extraction
+from scraper.merge_data import merge_folders
+from scraper.peer_evaluator import run_scripted_peer_evaluation
+import db_uploader
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROGRESS_PATH = BASE_DIR / "data" / "progress.json"
 
-
 def load_progress():
+    """Loads pipeline progress to allow resuming after interruptions."""
     default = {
         "scraper": False,
         "scraping_done": False,
@@ -40,6 +50,7 @@ def load_progress():
 
 
 def save_progress(progress):
+    """Saves pipeline state to disk."""
     PROGRESS_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(PROGRESS_PATH, "w", encoding="utf-8") as f:
         json.dump(progress, f, indent=2)
@@ -48,13 +59,16 @@ def save_progress(progress):
 def run_pipeline():
     print("Fetching NIFTY 100 symbols...")
     symbols = get_nifty100_symbols()
-    symbols=symbols[80:100]
+    symbols = symbols[80:100] 
     if "LICI" in symbols:
         symbols.remove("LICI")
-    print(f"Found {len(symbols)} companies.")
+    print(f"Found {len(symbols)} companies for processing.")
 
     progress = load_progress()
 
+    # ========================================
+    # PRE-PROCESSING: Scraper & Cleanup
+    # ========================================
     if progress.get("scraper"):
         print("\n[STEP] Scraper: already done according to progress.json")
     else:
@@ -74,6 +88,9 @@ def run_pipeline():
         save_progress(progress)
         print("[DONE] Unzip cleanup completed.")
 
+    # ========================================
+    # QUANTITATIVE: Yahoo Finance Data
+    # ========================================
     if progress.get("quantitative_done"):
         print("\n[STEP] Quantitative metrics: already done according to progress.json")
     else:
@@ -92,13 +109,11 @@ def run_pipeline():
 
         result = fetch_yfinance_metrics(symbols, progress_callback=_progress_callback)
         if result is None:
-            print("Warning: fetch_yfinance_metrics returned None. Setting completed/failed lists to defaults.")
             completed, failed = [], symbols.copy()
         else:
             try:
                 completed, failed = result
             except Exception as e:
-                print(f"Warning: Unexpected fetch_yfinance_metrics return type: {type(result)}, error: {e}")
                 completed, failed = [], symbols.copy()
 
         progress["quantitative_completed"] = completed
@@ -108,78 +123,54 @@ def run_pipeline():
         save_progress(progress)
         print("[DONE] Quantitative metrics completed.")
 
-    # Run individual extraction if not done
-    if progress.get("individual_completed") and len(progress.get("individual_completed")) >= len(symbols):
-        print("\n[STEP] Individual extraction: already complete according to progress.json")
-    else:
-        print("\n[STEP] Running individual qualitative extraction for pending companies...")
-        # Only run for skipped companies, not all symbols
-        skipped = progress.get("individual_skipped", [])
-        if skipped:
-            print(f"  Re-running extraction for {len(skipped)} skipped companies: {', '.join(skipped)}")
-            run_ai_extraction(skipped)
-            progress = load_progress()
-            print(f"[DONE] Re-ran individual extraction for skipped companies.")
-        else:
-            print("  No skipped companies to re-run. Individual extraction is complete.")
-
-# <<<<<<< HEAD
-#     # Optionally run AI extraction for qualitative insights
-#     # print("\nExtracting qualitative insights from PDFs (Gemini)...")
-#     # run_ai_extraction(symbols)
-
-# <<<<<<< HEAD
-#     # ========================================
-#     # Phase 1: Individual company analysis
-#     # ========================================
-#     print("\n" + "=" * 60)
-#     print("PHASE 1: Individual Company Analysis (Gemini)")
-#     print("=" * 60)
-
-#     phase1_ok = run_ai_extraction(symbols)
-
-#     if not phase1_ok:
-#         print("\nPhase 1 interrupted. Re-run pipeline to resume from where it stopped.")
-#         return
-
-#     # ========================================
-#     # Phase 2: Peer group evaluation
-#     # ========================================
-# #     print("\n" + "=" * 60)
-# #     print("PHASE 2: Peer Group Evaluation (Gemini)")
-# #     print("=" * 60)
-
-# #     phase2_ok = run_peer_evaluation(symbols)
-
-# #     if not phase2_ok:
-# #         print("\nPhase 2 interrupted. Re-run pipeline to resume from where it stopped.")
-# #         return
-
-#     print("\n" + "=" * 60)
-#     print("Pipeline completed successfully.")
-#     print("=" * 60)
-# =======
-#     print("\nPipeline completed successfully.")
-# >>>>>>> 7b1047652d4959cb54a5f50dee8b98e7392a47dc
-# =======
-#     print("\nPipeline run complete. Progress saved to progress.json.")
-# >>>>>>> df66bede97c30b1c9f1e9ec4da7c79a69786a8fb
-
-# ========================================
-    # Phase 1: Individual company analysis
+    # ========================================
+    # PHASE 1: Individual AI Company Analysis
     # ========================================
     print("\n" + "=" * 60)
-    print("PHASE 1: Individual Company Analysis (Gemini)")
+    print("PHASE 1: Individual Company Analysis (Gemini Extract)")
     print("=" * 60)
 
     phase1_ok = run_ai_extraction(symbols)
 
     if not phase1_ok:
-        print("\nPhase 1 interrupted. Re-run pipeline to resume.")
+        print("\nPhase 1 interrupted (Likely API Rate Limit). Re-run pipeline to resume.")
         return
 
+    # ========================================
+    # DATA STITCHING: Merge Quant & Qual
+    # ========================================
     print("\n" + "=" * 60)
-    print("Pipeline run complete. Progress saved to progress.json.")
+    print("DATA INTEGRATION: Merging Quantitative and Qualitative Data")
+    print("=" * 60)
+    
+    # 🚀 CRITICAL ADDITION: This must run before Phase 2!
+    merge_folders()
+
+    # ========================================
+    # PHASE 2: Sector Peer Evaluation (Math Engine)
+    # ========================================
+    print("\n" + "=" * 60)
+    print("PHASE 2: Sector Peer Evaluation (Python Math Engine)")
+    print("=" * 60)
+
+    phase2_ok = run_scripted_peer_evaluation()
+
+    if not phase2_ok:
+        print("\nPhase 2 failed. Check your individual JSON files for formatting errors.")
+        return
+        
+    # ========================================
+    # PHASE 3: Database Upload
+    # ========================================
+    print("\n" + "=" * 60)
+    print("PHASE 3: Pushing Data to Local MongoDB")
+    print("=" * 60)
+    
+    db_uploader.upload_individual_companies()
+    db_uploader.upload_peer_evaluations()
+
+    print("\n" + "=" * 60)
+    print("🏁 Pipeline run complete! All data is staged and in the database.")
     print("=" * 60)
 
 if __name__ == "__main__":

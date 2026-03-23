@@ -481,260 +481,157 @@ def rerun_skipped_individuals():
 # 10. PHASE 2 — PEER GROUP EVALUATION
 # ============================================================
 
-CONCATENATED_FILE = DATA_DIR / "nifty50_all_individual.json"
-UPLOAD_META_FILE = DATA_DIR / "upload_meta.json"
 
+# ============================================================
+# 10. PHASE 2 — PEER GROUP EVALUATION (DYNAMIC SECTOR ROUTING)
+# ============================================================
 
-def concatenate_individual_jsons(symbols):
+import yfinance as yf
+from collections import defaultdict
+import time
+
+PEER_EVAL_DIR = DATA_DIR / "peer_evaluations"
+PEER_EVAL_DIR.mkdir(parents=True, exist_ok=True)
+
+def get_dynamic_sector_map(symbols):
     """
-    Concatenate all individual JSONs into a single file.
-    This is a ONE-TIME operation — the file is created once and persisted.
+    Dynamically hits Yahoo Finance to group companies by their market sector.
+    Prevents the need for hardcoded lists and scales infinitely.
     """
-
-    if CONCATENATED_FILE.exists():
-        print("  Concatenated file already exists. Skipping concatenation.")
-        return
-
-    print("  Concatenating all individual JSONs...")
-
-    companies = {}
-
-    for symbol in symbols:
-        individual_path = INSIGHTS_DIR / symbol / f"{symbol}_individual.json"
-
-        if individual_path.exists():
-            with open(individual_path, "r", encoding="utf-8") as f:
-                companies[symbol] = json.load(f)
-        else:
-            print(f"    Warning: No individual JSON for {symbol}")
-
-    concatenated = {
-        "created_at": datetime.now(timezone(timedelta(hours=5, minutes=30))).isoformat(),
-        "companies": companies
-    }
-
-    with open(CONCATENATED_FILE, "w", encoding="utf-8") as f:
-        json.dump(concatenated, f, indent=2, ensure_ascii=False)
-
-    print(f"  Saved concatenated file with {len(companies)} companies.")
-
-
-def get_or_upload_concatenated_file():
-    """
-    Upload the concatenated JSON to Gemini's server if needed.
-
-    Logic:
-    - If upload_meta.json exists and created_at is within 36 hours → reuse
-    - Otherwise → re-upload (but do NOT re-concatenate)
-    """
-
-    need_upload = True
-
-    if UPLOAD_META_FILE.exists():
-        with open(UPLOAD_META_FILE, "r") as f:
-            meta = json.load(f)
-
-        created_at = datetime.fromisoformat(meta["created_at"])
-        now = datetime.now(timezone(timedelta(hours=5, minutes=30)))
-        age_hours = (now - created_at).total_seconds() / 3600
-
-        if age_hours < 36:
-            print(f"  Reusing uploaded file (uploaded {age_hours:.1f} hours ago)")
-            # Verify the file still exists on Gemini's server
-            try:
-                file_info = genai.get_file(meta["gemini_file_name"])
-                if file_info.state.name == "ACTIVE":
-                    need_upload = False
-                    return meta["gemini_file_name"]
-                else:
-                    print(f"  File no longer active on server. Re-uploading...")
-            except Exception:
-                print(f"  Could not find file on server. Re-uploading...")
-
-    if need_upload:
-        print("  Uploading concatenated file to Gemini server...")
-
-        uploaded_file = upload_and_wait(
-            CONCATENATED_FILE,
-            mime_type="application/json"
-        )
-
-        # Save upload metadata
-        meta = {
-            "created_at": datetime.now(timezone(timedelta(hours=5, minutes=30))).isoformat(),
-            "gemini_file_name": uploaded_file.name
-        }
-
-        with open(UPLOAD_META_FILE, "w") as f:
-            json.dump(meta, f, indent=2)
-
-        return uploaded_file.name
-
-
-def process_peer_evaluation(symbol, gemini_file_name):
-    """Run peer evaluation for a single company."""
-
-    # Load target company info from individual JSON
-    individual_path = INSIGHTS_DIR / symbol / f"{symbol}_individual.json"
-
-    if not individual_path.exists():
-        print(f"  No individual JSON for {symbol}. Skipping.")
-        return False
-
-    with open(individual_path, "r", encoding="utf-8") as f:
-        individual_data = json.load(f)
-
-    company_name = individual_data.get("company_metadata", {}).get("company_name", symbol)
-    ticker = symbol
-
-    print(f"  Generating peer evaluation for {company_name} ({ticker})...")
-
-    # Get the uploaded file reference
-    uploaded_file = genai.get_file(gemini_file_name)
-
-    # Build user prompt
-    user_prompt = PEER_EVAL_USER_TEMPLATE.replace(
-        "{company_name}", company_name
-    ).replace(
-        "{ticker}", ticker
-    ).replace(
-        "{schema}", SCHEMA_PEER_EVAL
-    )
-
-    response = peer_eval_model.generate_content(
-        [uploaded_file, user_prompt],
-        request_options={"timeout": 600},
-        generation_config=genai.GenerationConfig(
-            temperature=0.1,
-            response_mime_type="application/json",
-            max_output_tokens=65536
-        )
-    )
-
-    # Save output
-    company_dir = INSIGHTS_DIR / symbol
-    company_dir.mkdir(exist_ok=True)
-
-    save_path = company_dir / f"{symbol}_peereval.json"
-    save_json_report(response.text, save_path)
-
-    print(f"  Saved → {save_path.name}")
-    return True
-
+    print(f"\nDynamically mapping {len(symbols)} companies to their sectors via yfinance...")
+    sector_map = defaultdict(list)
+    
+    for sym in symbols:
+        try:
+            # Add .NS for Indian National Stock Exchange tickers
+            ticker = yf.Ticker(f"{sym}.NS")
+            sector = ticker.info.get("sector", "Unclassified")
+            
+            # Clean string for safe file naming
+            safe_sector_name = sector.replace(" ", "_").replace("/", "_")
+            sector_map[safe_sector_name].append(sym)
+            
+        except Exception as e:
+            print(f"  ⚠ Could not fetch sector for {sym}. Defaulting to Unclassified.")
+            sector_map["Unclassified"].append(sym)
+            
+    return dict(sector_map)
 
 def run_peer_evaluation(symbols):
     """
-    Phase 2: Run peer evaluation for all symbols.
-
-    Prerequisites: All individual JSONs must exist.
-    Concatenates once, uploads to Gemini server with 36hr TTL caching.
-
-    Same processing cadence as Phase 1:
-    - 1 company → 15s → next → ... → after 10th → 2 min rest
+    Phase 2: Groups completed individual JSONs by sector and runs a comparative AI analysis.
+    Bypasses the Gemini file-upload limits by feeding small, sector-specific JSON blocks directly.
     """
-
     progress = load_progress()
-    completed_individual = set(progress["individual_completed"])
-    completed_peer = set(progress["peer_eval_completed"])
+    completed_individual = set(progress.get("individual_completed", []))
+    completed_peer = set(progress.get("peer_eval_completed", []))
 
-    # Check that all individual analyses exist
-    missing = [s for s in symbols if s not in completed_individual]
-    if missing:
-        print(f"\nPhase 2: Cannot start — {len(missing)} companies missing individual analysis:")
-        for s in missing[:10]:
-            print(f"  - {s}")
-        if len(missing) > 10:
-            print(f"  ... and {len(missing) - 10} more")
+    # Only evaluate companies that successfully passed Phase 1
+    valid_symbols = [s for s in symbols if s in completed_individual]
+    
+    if not valid_symbols:
+        print("\nPhase 2: Cannot start — No companies have completed Phase 1 individual analysis.")
         return False
 
-    remaining = [s for s in symbols if s not in completed_peer]
-
-    if not remaining:
-        print("\nPhase 2: All peer evaluations already complete.")
-        return True
-
-    print(f"\nPhase 2: Peer Evaluation")
-    print(f"  {len(completed_peer)} already done, {len(remaining)} remaining\n")
-
-    # Step 1: Concatenate (one-time)
-    concatenate_individual_jsons(symbols)
-
-    # Step 2: Upload or reuse
-    try:
-        gemini_file_name = get_or_upload_concatenated_file()
-    except Exception as e:
-        print(f"\n*** Error uploading concatenated file: {e} ***")
-        save_progress(progress)
+    if not PEER_EVAL_SYSTEM_PROMPT or PEER_EVAL_SYSTEM_PROMPT == "Peer evaluation not configured.":
+        print("\n⚠ Missing prompt/schema for Phase 2. Skipping Peer Evaluation.")
         return False
 
-    # Step 3: Process each company
-    count_in_batch = 0
+    print("\n" + "=" * 60)
+    print("PHASE 2: Sector-Based Peer Evaluation")
+    print("=" * 60)
 
-    for i, symbol in enumerate(remaining):
-        print(f"[{len(completed_peer) + 1}/{len(symbols)}] Peer eval for {symbol}...")
+    # 1. Dynamically group the valid companies
+    sector_map = get_dynamic_sector_map(valid_symbols)
 
-        try:
-            success = process_peer_evaluation(symbol, gemini_file_name)
+    # 2. Setup the Gemini Model
+    generation_config = genai.types.GenerationConfig(
+        response_mime_type="application/json",
+        temperature=0.1, # Keep temperature extremely low for strict analytical ranking
+        max_output_tokens=8192
+    )
+    # Using the standard model, we don't need a custom peer_eval_model instance anymore
+    model = genai.GenerativeModel('gemini-2.5-flash', generation_config=generation_config)
 
-            if success:
-                progress["peer_eval_completed"].append(symbol)
-                completed_peer.add(symbol)
-                save_progress(progress)
-
-        except Exception as e:
-            error_str = str(e)
+    # 3. Process Sector by Sector
+    for sector, sector_symbols in sector_map.items():
+        print(f"\nAnalyzing Sector: {sector.replace('_', ' ')}")
+        
+        # Check if all symbols in this sector are already evaluated
+        if all(sym in completed_peer for sym in sector_symbols):
+            print(f"  ✓ All companies in {sector} already evaluated. Skipping.")
+            continue
             
-            # Rate-limit / quota errors
-            if "429" in error_str or "ResourceExhausted" in error_str or "quota" in error_str.lower():
-                print(f"\n*** Rate limit / quota error. Saving progress and stopping. ***")
-                print(f"*** Error: {e} ***")
-                save_progress(progress)
-                return False
-                
-            # Transient errors (500 Internal Error, 503, 504)
-            is_transient = ("500" in error_str or "503" in error_str or "504" in error_str
-                            or "timed out" in error_str.lower()
-                            or "DeadlineExceeded" in error_str)
-                            
-            if is_transient:
-                print(f"  ⏳ Transient server error ({error_str[:3]}) for {symbol}, retrying in 60s...")
-                time.sleep(60)
+        # Gather all Phase 1 JSONs for this specific sector
+        sector_data = []
+        for sym in sector_symbols:
+            json_path = INSIGHTS_DIR / sym / f"{sym}_individual.json"
+            if json_path.exists():
                 try:
-                    success = process_peer_evaluation(symbol, gemini_file_name)
-                    if success:
-                        progress["peer_eval_completed"].append(symbol)
-                        completed_peer.add(symbol)
-                        save_progress(progress)
-                        count_in_batch += 1
-                        if i < len(remaining) - 1:
-                            if count_in_batch % 10 == 0:
-                                print(f"\n  Batch of 10 complete. Resting for 2 minutes...\n")
-                                time.sleep(120)
-                            else:
-                                print(f"  Resting for 15 seconds...\n")
-                                time.sleep(15)
-                        continue
-                except Exception as retry_e:
-                    print(f"  ⚠ Retry also failed for {symbol} — {retry_e}")
-
-            # If not transient, or if retry failed, skip or stop
-            print(f"\n*** Unrecoverable Gemini API error for {symbol}. Stopping. ***")
-            print(f"*** Error: {e} ***")
+                    with open(json_path, 'r', encoding='utf-8') as f:
+                        company_data = json.load(f)
+                        # Tag with symbol so the AI knows who is who
+                        sector_data.append({sym: company_data})
+                except Exception as e:
+                    print(f"  ⚠ Could not load JSON for {sym}: {e}")
+        
+        # We need at least 2 companies to do a "Peer" evaluation
+        if len(sector_data) < 2:
+            print(f"  ⏭ Skipping {sector}: Need at least 2 companies for a peer evaluation.")
+            # Mark them as complete so the loop doesn't get stuck on them next time
+            for sym in sector_symbols:
+                if sym not in progress["peer_eval_completed"]:
+                    progress["peer_eval_completed"].append(sym)
             save_progress(progress)
-            return False
+            continue
 
-        count_in_batch += 1
+        output_path = PEER_EVAL_DIR / f"{sector}_evaluation.json"
 
-        # Check if this is the last symbol
-        if i < len(remaining) - 1:
-            if count_in_batch % 10 == 0:
-                print(f"\n  Batch of 10 complete. Resting for 2 minutes...\n")
-                time.sleep(120)
-            else:
-                print(f"  Resting for 15 seconds...\n")
+        # Format the payload and user prompt
+        payload_str = json.dumps(sector_data, indent=2)
+        user_prompt = PEER_EVAL_USER_TEMPLATE.replace("{schema}", SCHEMA_PEER_EVAL).replace("{peer_data}", payload_str)
+        
+        print(f"  Comparing {len(sector_data)} companies in {sector}...")
+        
+        # Robust Retry Logic for API Limits
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = model.generate_content(
+                    contents=[{"role": "user", "parts": [PEER_EVAL_SYSTEM_PROMPT, user_prompt]}]
+                )
+                
+                # Save the sector leaderboard
+                with open(output_path, "w", encoding='utf-8') as f:
+                    f.write(response.text)
+                
+                print(f"  ★ Successfully saved leaderboard → {sector}_evaluation.json")
+                
+                # Mark all companies in this sector as complete
+                for sym in sector_symbols:
+                    if sym not in progress["peer_eval_completed"]:
+                        progress["peer_eval_completed"].append(sym)
+                        completed_peer.add(sym)
+                save_progress(progress)
+                
+                # Rest between successful heavy sector calls to respect quotas
                 time.sleep(15)
+                break 
+                
+            except Exception as e:
+                error_str = str(e).lower()
+                if "429" in error_str or "quota" in error_str or "exhausted" in error_str:
+                    wait_time = 60 
+                    print(f"  ⚠ Rate limit hit! Waiting {wait_time}s before retry {attempt + 1}/{max_retries}...")
+                    time.sleep(wait_time)
+                elif "500" in error_str or "503" in error_str or "timeout" in error_str:
+                    print(f"  ⏳ Transient server error. Waiting 30s before retry {attempt + 1}/{max_retries}...")
+                    time.sleep(30)
+                else:
+                    print(f"  ❌ Unrecoverable error evaluating {sector}: {e}")
+                    break 
 
-    print(f"\nPhase 2 complete. {len(completed_peer)}/{len(symbols)} peer evaluations done.")
+    print(f"\nPhase 2 complete. Sector peer evaluations generated.")
     return True
 
 
@@ -743,9 +640,8 @@ def run_peer_evaluation(symbols):
 # ============================================================
 
 if __name__ == "__main__":
-
-    # Test with a single symbol
-    test_symbols = ["RELIANCE"]
+    # Test with a small batch to verify dynamic routing
+    test_symbols = ["TCS", "LTM", "DIVISLAB", "DRREDDY"]
 
     print("=== Phase 1: Individual Analysis ===")
     phase1_ok = run_ai_extraction(test_symbols)
@@ -753,3 +649,278 @@ if __name__ == "__main__":
     if phase1_ok:
         print("\n=== Phase 2: Peer Evaluation ===")
         run_peer_evaluation(test_symbols)
+
+        
+
+# CONCATENATED_FILE = DATA_DIR / "nifty50_all_individual.json"
+# UPLOAD_META_FILE = DATA_DIR / "upload_meta.json"
+
+
+# def concatenate_individual_jsons(symbols):
+#     """
+#     Concatenate all individual JSONs into a single file.
+#     This is a ONE-TIME operation — the file is created once and persisted.
+#     """
+
+#     if CONCATENATED_FILE.exists():
+#         print("  Concatenated file already exists. Skipping concatenation.")
+#         return
+
+#     print("  Concatenating all individual JSONs...")
+
+#     companies = {}
+
+#     for symbol in symbols:
+#         individual_path = INSIGHTS_DIR / symbol / f"{symbol}_individual.json"
+
+#         if individual_path.exists():
+#             with open(individual_path, "r", encoding="utf-8") as f:
+#                 companies[symbol] = json.load(f)
+#         else:
+#             print(f"    Warning: No individual JSON for {symbol}")
+
+#     concatenated = {
+#         "created_at": datetime.now(timezone(timedelta(hours=5, minutes=30))).isoformat(),
+#         "companies": companies
+#     }
+
+#     with open(CONCATENATED_FILE, "w", encoding="utf-8") as f:
+#         json.dump(concatenated, f, indent=2, ensure_ascii=False)
+
+#     print(f"  Saved concatenated file with {len(companies)} companies.")
+
+
+# def get_or_upload_concatenated_file():
+#     """
+#     Upload the concatenated JSON to Gemini's server if needed.
+
+#     Logic:
+#     - If upload_meta.json exists and created_at is within 36 hours → reuse
+#     - Otherwise → re-upload (but do NOT re-concatenate)
+#     """
+
+#     need_upload = True
+
+#     if UPLOAD_META_FILE.exists():
+#         with open(UPLOAD_META_FILE, "r") as f:
+#             meta = json.load(f)
+
+#         created_at = datetime.fromisoformat(meta["created_at"])
+#         now = datetime.now(timezone(timedelta(hours=5, minutes=30)))
+#         age_hours = (now - created_at).total_seconds() / 3600
+
+#         if age_hours < 36:
+#             print(f"  Reusing uploaded file (uploaded {age_hours:.1f} hours ago)")
+#             # Verify the file still exists on Gemini's server
+#             try:
+#                 file_info = genai.get_file(meta["gemini_file_name"])
+#                 if file_info.state.name == "ACTIVE":
+#                     need_upload = False
+#                     return meta["gemini_file_name"]
+#                 else:
+#                     print(f"  File no longer active on server. Re-uploading...")
+#             except Exception:
+#                 print(f"  Could not find file on server. Re-uploading...")
+
+#     if need_upload:
+#         print("  Uploading concatenated file to Gemini server...")
+
+#         uploaded_file = upload_and_wait(
+#             CONCATENATED_FILE,
+#             mime_type="application/json"
+#         )
+
+#         # Save upload metadata
+#         meta = {
+#             "created_at": datetime.now(timezone(timedelta(hours=5, minutes=30))).isoformat(),
+#             "gemini_file_name": uploaded_file.name
+#         }
+
+#         with open(UPLOAD_META_FILE, "w") as f:
+#             json.dump(meta, f, indent=2)
+
+#         return uploaded_file.name
+
+
+# def process_peer_evaluation(symbol, gemini_file_name):
+#     """Run peer evaluation for a single company."""
+
+#     # Load target company info from individual JSON
+#     individual_path = INSIGHTS_DIR / symbol / f"{symbol}_individual.json"
+
+#     if not individual_path.exists():
+#         print(f"  No individual JSON for {symbol}. Skipping.")
+#         return False
+
+#     with open(individual_path, "r", encoding="utf-8") as f:
+#         individual_data = json.load(f)
+
+#     company_name = individual_data.get("company_metadata", {}).get("company_name", symbol)
+#     ticker = symbol
+
+#     print(f"  Generating peer evaluation for {company_name} ({ticker})...")
+
+#     # Get the uploaded file reference
+#     uploaded_file = genai.get_file(gemini_file_name)
+
+#     # Build user prompt
+#     user_prompt = PEER_EVAL_USER_TEMPLATE.replace(
+#         "{company_name}", company_name
+#     ).replace(
+#         "{ticker}", ticker
+#     ).replace(
+#         "{schema}", SCHEMA_PEER_EVAL
+#     )
+
+#     response = peer_eval_model.generate_content(
+#         [uploaded_file, user_prompt],
+#         request_options={"timeout": 600},
+#         generation_config=genai.GenerationConfig(
+#             temperature=0.1,
+#             response_mime_type="application/json",
+#             max_output_tokens=65536
+#         )
+#     )
+
+#     # Save output
+#     company_dir = INSIGHTS_DIR / symbol
+#     company_dir.mkdir(exist_ok=True)
+
+#     save_path = company_dir / f"{symbol}_peereval.json"
+#     save_json_report(response.text, save_path)
+
+#     print(f"  Saved → {save_path.name}")
+#     return True
+
+
+# def run_peer_evaluation(symbols):
+#     """
+#     Phase 2: Run peer evaluation for all symbols.
+
+#     Prerequisites: All individual JSONs must exist.
+#     Concatenates once, uploads to Gemini server with 36hr TTL caching.
+
+#     Same processing cadence as Phase 1:
+#     - 1 company → 15s → next → ... → after 10th → 2 min rest
+#     """
+
+#     progress = load_progress()
+#     completed_individual = set(progress["individual_completed"])
+#     completed_peer = set(progress["peer_eval_completed"])
+
+#     # Check that all individual analyses exist
+#     missing = [s for s in symbols if s not in completed_individual]
+#     if missing:
+#         print(f"\nPhase 2: Cannot start — {len(missing)} companies missing individual analysis:")
+#         for s in missing[:10]:
+#             print(f"  - {s}")
+#         if len(missing) > 10:
+#             print(f"  ... and {len(missing) - 10} more")
+#         return False
+
+#     remaining = [s for s in symbols if s not in completed_peer]
+
+#     if not remaining:
+#         print("\nPhase 2: All peer evaluations already complete.")
+#         return True
+
+#     print(f"\nPhase 2: Peer Evaluation")
+#     print(f"  {len(completed_peer)} already done, {len(remaining)} remaining\n")
+
+#     # Step 1: Concatenate (one-time)
+#     concatenate_individual_jsons(symbols)
+
+#     # Step 2: Upload or reuse
+#     try:
+#         gemini_file_name = get_or_upload_concatenated_file()
+#     except Exception as e:
+#         print(f"\n*** Error uploading concatenated file: {e} ***")
+#         save_progress(progress)
+#         return False
+
+#     # Step 3: Process each company
+#     count_in_batch = 0
+
+#     for i, symbol in enumerate(remaining):
+#         print(f"[{len(completed_peer) + 1}/{len(symbols)}] Peer eval for {symbol}...")
+
+#         try:
+#             success = process_peer_evaluation(symbol, gemini_file_name)
+
+#             if success:
+#                 progress["peer_eval_completed"].append(symbol)
+#                 completed_peer.add(symbol)
+#                 save_progress(progress)
+
+#         except Exception as e:
+#             error_str = str(e)
+            
+#             # Rate-limit / quota errors
+#             if "429" in error_str or "ResourceExhausted" in error_str or "quota" in error_str.lower():
+#                 print(f"\n*** Rate limit / quota error. Saving progress and stopping. ***")
+#                 print(f"*** Error: {e} ***")
+#                 save_progress(progress)
+#                 return False
+                
+#             # Transient errors (500 Internal Error, 503, 504)
+#             is_transient = ("500" in error_str or "503" in error_str or "504" in error_str
+#                             or "timed out" in error_str.lower()
+#                             or "DeadlineExceeded" in error_str)
+                            
+#             if is_transient:
+#                 print(f"  ⏳ Transient server error ({error_str[:3]}) for {symbol}, retrying in 60s...")
+#                 time.sleep(60)
+#                 try:
+#                     success = process_peer_evaluation(symbol, gemini_file_name)
+#                     if success:
+#                         progress["peer_eval_completed"].append(symbol)
+#                         completed_peer.add(symbol)
+#                         save_progress(progress)
+#                         count_in_batch += 1
+#                         if i < len(remaining) - 1:
+#                             if count_in_batch % 10 == 0:
+#                                 print(f"\n  Batch of 10 complete. Resting for 2 minutes...\n")
+#                                 time.sleep(120)
+#                             else:
+#                                 print(f"  Resting for 15 seconds...\n")
+#                                 time.sleep(15)
+#                         continue
+#                 except Exception as retry_e:
+#                     print(f"  ⚠ Retry also failed for {symbol} — {retry_e}")
+
+#             # If not transient, or if retry failed, skip or stop
+#             print(f"\n*** Unrecoverable Gemini API error for {symbol}. Stopping. ***")
+#             print(f"*** Error: {e} ***")
+#             save_progress(progress)
+#             return False
+
+#         count_in_batch += 1
+
+#         # Check if this is the last symbol
+#         if i < len(remaining) - 1:
+#             if count_in_batch % 10 == 0:
+#                 print(f"\n  Batch of 10 complete. Resting for 2 minutes...\n")
+#                 time.sleep(120)
+#             else:
+#                 print(f"  Resting for 15 seconds...\n")
+#                 time.sleep(15)
+
+#     print(f"\nPhase 2 complete. {len(completed_peer)}/{len(symbols)} peer evaluations done.")
+#     return True
+
+
+# # ============================================================
+# # 11. LOCAL TEST
+# # ============================================================
+
+# if __name__ == "__main__":
+
+#     # Test with a single symbol
+#     test_symbols = ["RELIANCE"]
+
+#     print("=== Phase 1: Individual Analysis ===")
+#     phase1_ok = run_ai_extraction(test_symbols)
+
+#     if phase1_ok:
+#         print("\n=== Phase 2: Peer Evaluation ===")
+#         run_peer_evaluation(test_symbols)
