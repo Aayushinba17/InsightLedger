@@ -14,6 +14,7 @@ from quantitative_fetcher import fetch_yfinance_metrics
 from scraper.ai_extractor import run_ai_extraction
 from scraper.merge_data import merge_folders
 from scraper.peer_evaluator import run_scripted_peer_evaluation
+from scraper.industry_evaluator import run_industry_evaluation
 import db_uploader
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -158,7 +159,19 @@ def run_pipeline():
     if not phase2_ok:
         print("\nPhase 2 failed. Check your individual JSON files for formatting errors.")
         return
-        
+
+    # ========================================
+    # PHASE 2.5: Industry-Level Evaluation
+    # ========================================
+    print("\n" + "=" * 60)
+    print("PHASE 2.5: Industry-Level Aggregation & Ranking")
+    print("=" * 60)
+
+    industry_ok = run_industry_evaluation()
+
+    if not industry_ok:
+        print("\nIndustry evaluation did not complete. Continuing to DB upload...")
+
     # ========================================
     # PHASE 3: Database Upload
     # ========================================
@@ -168,6 +181,7 @@ def run_pipeline():
     
     db_uploader.upload_individual_companies()
     db_uploader.upload_peer_evaluations()
+    db_uploader.upload_industry_evaluations()
 
     print("\n" + "=" * 60)
     print("🏁 Pipeline run complete! All data is staged and in the database.")

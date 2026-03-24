@@ -19,12 +19,14 @@ db = client['insightledger']
 # Define the collections
 companies_col = db['companies']
 sectors_col = db['sector_evaluations']
+industries_col = db['industry_evaluations']
 
 # Define paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 INSIGHTS_DIR = DATA_DIR / "qualitative_insights"
 PEER_EVAL_DIR = DATA_DIR / "peer_evaluations"
+INDUSTRY_EVAL_DIR = DATA_DIR / "industry_evaluations"
 
 # ============================================================
 # 2. UPLOAD INDIVIDUAL COMPANIES (PHASE 1)
@@ -119,7 +121,63 @@ def upload_peer_evaluations():
         print("⏭ No peer evaluation JSONs found to upload.")
 
 # ============================================================
-# 4. EXECUTE
+# 4. UPLOAD INDUSTRY EVALUATIONS
+# ============================================================
+def upload_industry_evaluations():
+    print("\n" + "=" * 50)
+    print("🚀 UPLOADING INDUSTRY EVALUATIONS TO LOCAL MONGODB")
+    print("=" * 50)
+
+    if not INDUSTRY_EVAL_DIR.exists():
+        print("⚠ industry_evaluations directory not found. Skipping.")
+        return
+
+    operations = []
+    processed_count = 0
+
+    for eval_file in INDUSTRY_EVAL_DIR.glob("*_industry.json"):
+        try:
+            with open(eval_file, 'r', encoding='utf-8') as f:
+                industry_data = json.load(f)
+
+                industry_name = industry_data.get("industry")
+                if not industry_name:
+                    industry_name = eval_file.stem.replace("_industry", "")
+
+                op = UpdateOne(
+                    {"industry": industry_name},
+                    {"$set": industry_data},
+                    upsert=True
+                )
+                operations.append(op)
+                processed_count += 1
+        except Exception as e:
+            print(f"❌ Error reading {eval_file.name}: {e}")
+
+    # Also upload the summary file
+    summary_file = INDUSTRY_EVAL_DIR / "_industry_summary.json"
+    if summary_file.exists():
+        try:
+            with open(summary_file, 'r', encoding='utf-8') as f:
+                summary_data = json.load(f)
+            op = UpdateOne(
+                {"_type": "industry_summary"},
+                {"$set": {**summary_data, "_type": "industry_summary"}},
+                upsert=True
+            )
+            operations.append(op)
+        except Exception as e:
+            print(f"❌ Error reading summary: {e}")
+
+    if operations:
+        result = industries_col.bulk_write(operations)
+        print(f"✅ Successfully processed {processed_count} industry evaluations.")
+        print(f"📊 Inserted: {result.upserted_count} | Updated: {result.modified_count}")
+    else:
+        print("⏭ No industry evaluation JSONs found to upload.")
+
+# ============================================================
+# 5. EXECUTE
 # ============================================================
 if __name__ == "__main__":
     try:
@@ -129,6 +187,7 @@ if __name__ == "__main__":
         
         upload_individual_companies()
         upload_peer_evaluations()
+        upload_industry_evaluations()
         
         print("\n🎉 Database migration complete!")
     except Exception as e:
