@@ -8,7 +8,7 @@ from pathlib import Path
 
 # Implemented pipeline modules
 from symbols import get_nifty100_symbols
-from scraper import run_scraper
+from pdf_scraper import run_scraper
 from unzip import run_unzip_cleanup
 from quantitative_fetcher import fetch_yfinance_metrics
 from scraper.ai_extractor import run_ai_extraction

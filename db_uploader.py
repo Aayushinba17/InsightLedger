@@ -22,7 +22,7 @@ sectors_col = db['sector_evaluations']
 industries_col = db['industry_evaluations']
 
 # Define paths
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 INSIGHTS_DIR = DATA_DIR / "qualitative_insights"
 PEER_EVAL_DIR = DATA_DIR / "peer_evaluations"
