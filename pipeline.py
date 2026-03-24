@@ -148,6 +148,15 @@ def run_pipeline():
     merge_folders()
 
     # ========================================
+    # DATA STITCHING 2.0: Daily Real-time Pricing
+    # ========================================
+    print("\n" + "=" * 60)
+    print("DATA INTEGRATION: Injecting Real-Time Daily Market Prices")
+    print("=" * 60)
+    from update_daily_prices import run_price_update
+    run_price_update(symbols)
+
+    # ========================================
     # PHASE 2: Sector Peer Evaluation (Math Engine)
     # ========================================
     print("\n" + "=" * 60)
