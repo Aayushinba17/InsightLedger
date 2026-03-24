@@ -400,29 +400,6 @@ def fetch_yfinance_metrics(symbols, progress_callback=None):
             # Format YF Insider holding to percentage
             yf_promoter = (info.get("heldPercentInsiders") * 100) if info.get("heldPercentInsiders") is not None else None
 
-            try:
-                info = ticker.info
-            except Exception:
-                pass
-            
-            # ==========================================
-            # NEW: FETCH TOP 3 NEWS HEADLINES
-            # ==========================================
-            top_headlines = []
-            try:
-                raw_news = ticker.news
-                if raw_news:
-                # Grab only the first 3 articles
-                    for article in raw_news[:3]:
-                        top_headlines.append({
-                        "title": article.get("title", "No Title"),
-                        "publisher": article.get("publisher", "Unknown"),
-                        "link": article.get("link", "#")
-                    })
-            except Exception as e:
-                print(f"    ⚠ Could not fetch news for {symbol}: {e}")
-             # ==========================================
-
             metrics = {
                 "symbol": symbol,
                 "Recent": {
@@ -472,8 +449,7 @@ def fetch_yfinance_metrics(symbols, progress_callback=None):
                     "Return over 1year": get_val(calculate_return(hist, 252), s_data, ["return over 1year", "return 1yr"]),
                     "Return over 3years": get_val(calculate_return(hist, 756), s_data, ["return over 3years", "return 3yr"]),
                     "Return over 5years": get_val(calculate_return(hist, 1260), s_data, ["return over 5years", "return 5yr"])
-                },
-                "Recent_News": top_headlines
+                }
             }
             
             save_path = QUANT_DIR / f"{symbol}_quant.json"
