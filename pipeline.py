@@ -60,7 +60,7 @@ def save_progress(progress):
 def run_pipeline():
     print("Fetching NIFTY 100 symbols...")
     symbols = get_nifty100_symbols()
-    symbols = symbols[80:100] 
+    symbols = symbols[:100]
     if "LICI" in symbols:
         symbols.remove("LICI")
     print(f"Found {len(symbols)} companies for processing.")
