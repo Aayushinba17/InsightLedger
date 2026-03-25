@@ -127,15 +127,15 @@ def run_pipeline():
     # ========================================
     # PHASE 1: Individual AI Company Analysis
     # ========================================
-    print("\n" + "=" * 60)
-    print("PHASE 1: Individual Company Analysis (Gemini Extract)")
-    print("=" * 60)
+    # print("\n" + "=" * 60)
+    # print("PHASE 1: Individual Company Analysis (Gemini Extract)")
+    # print("=" * 60)
 
-    phase1_ok = run_ai_extraction(symbols)
+    # phase1_ok = run_ai_extraction(symbols)
 
-    if not phase1_ok:
-        print("\nPhase 1 interrupted (Likely API Rate Limit). Re-run pipeline to resume.")
-        return
+    # if not phase1_ok:
+    #     print("\nPhase 1 interrupted (Likely API Rate Limit). Re-run pipeline to resume.")
+    #     return
 
     # ========================================
     # DATA STITCHING: Merge Quant & Qual
