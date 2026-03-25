@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { cn } from '../utils/cn';
 
-const companyFiles = import.meta.glob('../../../data/qualitative_insights/*/business_overview.json', { eager: true });
+const companyFiles = import.meta.glob('../../../data/qualitative_insights/*/*_individual.json', { eager: true });
+const oldCompanyFiles = import.meta.glob('../../../data/qualitative_insights/*/business_overview.json', { eager: true });
 const industrySummaryFile = import.meta.glob('../../../data/industry_evaluations/_industry_summary.json', { eager: true });
 
 export default function SearchBar({ className }) {
@@ -18,6 +19,11 @@ export default function SearchBar({ className }) {
       // 1. Get companies from directory paths
       const companies = new Set();
       for (const path in companyFiles) {
+        const parts = path.split('/');
+        const symbol = parts[parts.length - 2];
+        if (symbol) companies.add(symbol);
+      }
+      for (const path in oldCompanyFiles) {
         const parts = path.split('/');
         const symbol = parts[parts.length - 2];
         if (symbol) companies.add(symbol);
@@ -104,8 +110,8 @@ export default function SearchBar({ className }) {
       </form>
 
       {showDropdown && filteredOptions.length > 0 && (
-        <div className="absolute z-50 top-full mt-2 w-full bg-[#1a1a2e] border border-gray-700 rounded-xl overflow-hidden shadow-2xl">
-          <ul className="max-h-64 overflow-y-auto">
+        <div className="absolute z-[999] top-full mt-2 left-0 w-full bg-[#1a1a2e] border border-gray-700 rounded-xl overflow-hidden shadow-2xl">
+          <ul className="max-h-64 overflow-y-auto w-full">
             {filteredOptions.map((opt, idx) => (
               <li 
                 key={idx}

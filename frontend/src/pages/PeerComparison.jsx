@@ -4,6 +4,7 @@ import Table from '../components/Table';
 import { ArrowLeft } from 'lucide-react';
 
 const peerFiles = import.meta.glob('../../../data/peer_evaluations/*_evaluation.json', { eager: true });
+const individualFiles = import.meta.glob('../../../data/qualitative_insights/*/*_individual.json', { eager: true });
 const bqFiles = import.meta.glob('../../../data/qualitative_insights/*/business_quality_signals.json', { eager: true });
 const cyFiles = import.meta.glob('../../../data/qualitative_insights/*/cyclicality_signals.json', { eager: true });
 const rpFiles = import.meta.glob('../../../data/qualitative_insights/*/return_profile_signals.json', { eager: true });
@@ -54,15 +55,18 @@ export default function PeerComparison() {
         status = 'Watchlist';
       }
 
+      const indPath = `../../../data/qualitative_insights/${item.company}/${item.company}_individual.json`;
+      const indData = individualFiles[indPath]?.default || individualFiles[indPath];
+
       const bqPath = `../../../data/qualitative_insights/${item.company}/business_quality_signals.json`;
       const cyPath = `../../../data/qualitative_insights/${item.company}/cyclicality_signals.json`;
       const rpPath = `../../../data/qualitative_insights/${item.company}/return_profile_signals.json`;
       const bgPath = `../../../data/qualitative_insights/${item.company}/governance_signals.json`;
 
-      const bqData = bqFiles[bqPath]?.default || bqFiles[bqPath];
-      const cyData = cyFiles[cyPath]?.default || cyFiles[cyPath];
-      const rpData = rpFiles[rpPath]?.default || rpFiles[rpPath];
-      const bgData = bgFiles[bgPath]?.default || bgFiles[bgPath];
+      const bqData = indData?.business_quality_signals || bqFiles[bqPath]?.default || bqFiles[bqPath];
+      const cyData = indData?.cyclicality_signals || cyFiles[cyPath]?.default || cyFiles[cyPath];
+      const rpData = indData?.return_profile_signals || rpFiles[rpPath]?.default || rpFiles[rpPath];
+      const bgData = indData?.governance_signals || bgFiles[bgPath]?.default || bgFiles[bgPath];
 
       const valueRank = foundIndustry?.rankings?.value_investor?.find(c => c.company === item.company);
       const growthRank = foundIndustry?.rankings?.growth_investor?.find(c => c.company === item.company);
