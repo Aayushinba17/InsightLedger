@@ -150,7 +150,8 @@ HEADERS = {
     "Referer": "https://www.nseindia.com/"
 }
 
-DATA_DIR = Path("data")
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
 JSON_DIR = DATA_DIR / "raw_json"
 REPORTS_DIR = DATA_DIR / "reports"
 
