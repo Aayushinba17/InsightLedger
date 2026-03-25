@@ -5,7 +5,7 @@ import TagBadge from '../components/TagBadge';
 import ScoreCard from '../components/ScoreCard';
 import MetricCard from '../components/MetricCard';
 import ChartCard from '../components/ChartCard';
-import { ArrowLeft, Users } from 'lucide-react';
+import { ArrowLeft, Users, ArrowUpRight } from 'lucide-react';
 
 const peerFiles = import.meta.glob('../../../data/peer_evaluations/*_evaluation.json', { eager: true });
 
@@ -14,6 +14,7 @@ export default function CompanyDashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeNewsIdx, setActiveNewsIdx] = useState(null);
 
   useEffect(() => {
     fetchQualitativeAnalysis(symbol)
@@ -54,6 +55,7 @@ export default function CompanyDashboard() {
 
   const recentMetrics = quantitative_data?.Recent || {};
   const historical = quantitative_data?.Historical || {};
+  const recentNews = quantitative_data?.Recent_News || quantitative_data?.recent_news || [];
 
   // --- NEW TAG LOGIC ---
   let badgeLabel = 'Watchlist';
@@ -72,7 +74,7 @@ export default function CompanyDashboard() {
     if (targetIndustry && targetIndustry.rankings?.fundamental_investor) {
       const rawList = [...targetIndustry.rankings.fundamental_investor];
       const hasScores = !!rawList.some(item => item.score !== undefined && item.score !== null);
-      
+
       if (hasScores) {
         rawList.sort((a, b) => (b.score || 0) - (a.score || 0));
       } else {
@@ -89,7 +91,7 @@ export default function CompanyDashboard() {
       const mid50Count = Math.ceil(total * 0.50);
 
       const computedIndex = rawList.findIndex(item => item.company === symbolUpper);
-      
+
       if (computedIndex !== -1) {
         if (computedIndex < top20Count) {
           badgeLabel = 'Dash Pick';
@@ -214,6 +216,59 @@ export default function CompanyDashboard() {
           )}
         </div>
       </section>
+
+      {/* Recent News */}
+      {recentNews.length > 0 && (
+        <section>
+          <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1">Recent News</h2>
+          <div className="space-y-3">
+            {recentNews.map((item, idx) => (
+              <div
+                key={`${item.link || item.title || 'news'}-${idx}`}
+                className={`relative block overflow-hidden bg-insight-card p-4 rounded-xl border border-gray-800 transition-all duration-300 ${
+                  activeNewsIdx === idx
+                    ? 'shadow-lg shadow-insight-blue/20 -translate-y-0.5'
+                    : ''
+                }`}
+              >
+                <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 bg-gradient-to-r from-insight-blue/10 via-transparent to-insight-purple/10 ${
+                  activeNewsIdx === idx ? 'opacity-100' : 'opacity-0'
+                }`} />
+                <p className={`text-sm md:text-base font-medium leading-relaxed transition-colors duration-300 ${
+                  activeNewsIdx === idx ? 'text-insight-blue' : 'text-gray-100'
+                }`}>
+                  {item.title || 'Untitled article'}
+                </p>
+                <div className="relative z-10 mt-3 flex items-center justify-between gap-3">
+                  <p className={`text-xs transition-colors duration-300 ${
+                    activeNewsIdx === idx ? 'text-gray-200' : 'text-gray-400'
+                  }`}>
+                    {item.publisher || 'Unknown publisher'}
+                  </p>
+                  <a
+                    href={item.link || '#'}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    onMouseEnter={() => setActiveNewsIdx(idx)}
+                    onMouseLeave={() => setActiveNewsIdx(null)}
+                    onFocus={() => setActiveNewsIdx(idx)}
+                    onBlur={() => setActiveNewsIdx(null)}
+                    className="inline-flex items-center gap-1 text-[11px] uppercase tracking-wider font-semibold text-insight-blue hover:text-white bg-insight-blue/10 hover:bg-insight-blue px-2.5 py-1 rounded-full transition-colors duration-300"
+                  >
+                    Explore news
+                    <ArrowUpRight
+                      size={13}
+                      className={`transition-transform duration-300 ${
+                        activeNewsIdx === idx ? 'translate-x-0.5 -translate-y-0.5' : ''
+                      }`}
+                    />
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
     </div>
   );
