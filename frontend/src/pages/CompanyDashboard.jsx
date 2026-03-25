@@ -7,6 +7,8 @@ import MetricCard from '../components/MetricCard';
 import ChartCard from '../components/ChartCard';
 import { ArrowLeft, Users } from 'lucide-react';
 
+const peerFiles = import.meta.glob('../../../data/peer_evaluations/*_evaluation.json', { eager: true });
+
 export default function CompanyDashboard() {
   const { symbol } = useParams();
   const [data, setData] = useState(null);
@@ -53,6 +55,57 @@ export default function CompanyDashboard() {
   const recentMetrics = quantitative_data?.Recent || {};
   const historical = quantitative_data?.Historical || {};
 
+  // --- NEW TAG LOGIC ---
+  let badgeLabel = 'Watchlist';
+  try {
+    let targetIndustry = null;
+
+    for (const path in peerFiles) {
+      const mod = peerFiles[path];
+      const ind = mod.default || mod;
+      if (ind?.rankings?.fundamental_investor?.some(c => c.company === symbolUpper)) {
+        targetIndustry = ind;
+        break;
+      }
+    }
+
+    if (targetIndustry && targetIndustry.rankings?.fundamental_investor) {
+      const rawList = [...targetIndustry.rankings.fundamental_investor];
+      const hasScores = !!rawList.some(item => item.score !== undefined && item.score !== null);
+      
+      if (hasScores) {
+        rawList.sort((a, b) => (b.score || 0) - (a.score || 0));
+      } else {
+        // Fallback to index-based ranking or explicitly using the rank parameter
+        rawList.sort((a, b) => {
+          const aRank = a.rank !== undefined ? a.rank : 999;
+          const bRank = b.rank !== undefined ? b.rank : 999;
+          return aRank - bRank;
+        });
+      }
+
+      const total = rawList.length;
+      const top20Count = Math.ceil(total * 0.20);
+      const mid50Count = Math.ceil(total * 0.50);
+
+      const computedIndex = rawList.findIndex(item => item.company === symbolUpper);
+      
+      if (computedIndex !== -1) {
+        if (computedIndex < top20Count) {
+          badgeLabel = 'Dash Pick';
+        } else if (computedIndex < top20Count + mid50Count) {
+          badgeLabel = 'Watchlist';
+        } else {
+          badgeLabel = 'Avoid';
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error calculating badge:', err);
+    badgeLabel = 'Watchlist'; // fallback gracefully
+  }
+  // --- END TAG LOGIC ---
+
   const Chart_Data = [
     { date: '5Y', value: historical['Return over 5years'] ? historical['Return over 5years'] * 100 : 0 },
     { date: '3Y', value: historical['Return over 3years'] ? historical['Return over 3years'] * 100 : 0 },
@@ -64,7 +117,7 @@ export default function CompanyDashboard() {
       {/* Navigation */}
       <div className="flex items-center justify-between mb-2">
         <Link to="/" className="text-gray-500 hover:text-insight-blue transition-colors flex items-center gap-2 text-sm font-medium">
-          <ArrowLeft size={16} /> Back to Search
+          <ArrowLeft size={16} /> Back to Home
         </Link>
         <Link to={`/company/${symbol}/peers`} className="text-insight-purple hover:text-white transition-colors flex items-center gap-2 text-sm font-medium bg-insight-purple/10 px-4 py-2 rounded-full border border-insight-purple/30 shadow">
           <Users size={16} /> Compare Peers
@@ -80,7 +133,7 @@ export default function CompanyDashboard() {
           </p>
         </div>
         <div className="relative z-10 left-0">
-          <TagBadge label="Watchlist" className="text-lg px-4 py-1" />
+          <TagBadge label={badgeLabel} className="text-lg px-4 py-1" />
         </div>
         <div className="absolute top-0 right-0 w-64 h-64 bg-insight-blue/5 rounded-full blur-[80px]" />
       </header>
@@ -135,14 +188,30 @@ export default function CompanyDashboard() {
       <section>
         <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1">Market Snapshot</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-          <MetricCard label="PE Ratio" value={recentMetrics["Price to Earning"]} />
-          <MetricCard label="ROE" value={recentMetrics["Return on equity"] ? (recentMetrics["Return on equity"] * 100).toFixed(2) + '%' : null} />
-          <MetricCard label="ROCE" value={recentMetrics["Return on capital employed"] ? (recentMetrics["Return on capital employed"] * 100).toFixed(2) + '%' : null} />
-          <MetricCard label="Debt/Equity" value={recentMetrics["Debt to equity"]} />
-          <MetricCard label="Dividend Yield" value={recentMetrics["Dividend yield"]} />
-          <MetricCard label="EPS" value={recentMetrics["EPS"]} />
-          <MetricCard label="Sales Growth" value={recentMetrics["Sales growth"] ? (recentMetrics["Sales growth"] * 100).toFixed(2) + '%' : null} />
-          <MetricCard label="Profit Growth" value={recentMetrics["Profit growth"] ? (recentMetrics["Profit growth"] * 100).toFixed(2) + '%' : null} />
+          {recentMetrics["Price to Earning"] !== null && recentMetrics["Price to Earning"] !== undefined && (
+            <MetricCard label="PE Ratio" value={recentMetrics["Price to Earning"]} />
+          )}
+          {recentMetrics["Return on equity"] !== null && recentMetrics["Return on equity"] !== undefined && (
+            <MetricCard label="ROE" value={(recentMetrics["Return on equity"] * 100).toFixed(2) + '%'} />
+          )}
+          {recentMetrics["Return on capital employed"] !== null && recentMetrics["Return on capital employed"] !== undefined && (
+            <MetricCard label="ROCE" value={(recentMetrics["Return on capital employed"] * 100).toFixed(2) + '%'} />
+          )}
+          {recentMetrics["Debt to equity"] !== null && recentMetrics["Debt to equity"] !== undefined && (
+            <MetricCard label="Debt/Equity" value={recentMetrics["Debt to equity"]} />
+          )}
+          {recentMetrics["Dividend yield"] !== null && recentMetrics["Dividend yield"] !== undefined && (
+            <MetricCard label="Dividend Yield" value={recentMetrics["Dividend yield"]} />
+          )}
+          {recentMetrics["EPS"] !== null && recentMetrics["EPS"] !== undefined && (
+            <MetricCard label="EPS" value={recentMetrics["EPS"]} />
+          )}
+          {recentMetrics["Sales growth"] !== null && recentMetrics["Sales growth"] !== undefined && (
+            <MetricCard label="Sales Growth" value={(recentMetrics["Sales growth"] * 100).toFixed(2) + '%'} />
+          )}
+          {recentMetrics["Profit growth"] !== null && recentMetrics["Profit growth"] !== undefined && (
+            <MetricCard label="Profit Growth" value={(recentMetrics["Profit growth"] * 100).toFixed(2) + '%'} />
+          )}
         </div>
       </section>
 

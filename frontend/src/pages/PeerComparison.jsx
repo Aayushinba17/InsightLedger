@@ -4,21 +4,26 @@ import Table from '../components/Table';
 import { ArrowLeft } from 'lucide-react';
 
 const peerFiles = import.meta.glob('../../../data/peer_evaluations/*_evaluation.json', { eager: true });
+const bqFiles = import.meta.glob('../../../data/qualitative_insights/*/business_quality_signals.json', { eager: true });
+const cyFiles = import.meta.glob('../../../data/qualitative_insights/*/cyclicality_signals.json', { eager: true });
+const rpFiles = import.meta.glob('../../../data/qualitative_insights/*/return_profile_signals.json', { eager: true });
+const bgFiles = import.meta.glob('../../../data/qualitative_insights/*/governance_signals.json', { eager: true });
 
 export default function PeerComparison() {
   const { symbol } = useParams();
 
   const peerData = useMemo(() => {
     let rawList = [];
+    let foundIndustry = null;
     try {
       let allIndustries = Object.values(peerFiles).map((mod) => mod.default || mod);
       
-      let targetIndustry = allIndustries.find(ind => 
+      foundIndustry = allIndustries.find(ind => 
         ind.rankings?.fundamental_investor?.some(c => c.company === symbol.toUpperCase())
       );
 
-      if (targetIndustry && targetIndustry.rankings?.fundamental_investor) {
-        rawList = [...targetIndustry.rankings.fundamental_investor];
+      if (foundIndustry && foundIndustry.rankings?.fundamental_investor) {
+        rawList = [...foundIndustry.rankings.fundamental_investor];
       }
     } catch (e) {
       console.error(e);
@@ -26,7 +31,16 @@ export default function PeerComparison() {
 
     if (!rawList.length) return [];
 
-    rawList.sort((a, b) => (b.score || 0) - (a.score || 0));
+    const hasScores = !!rawList.some(item => item.score !== undefined && item.score !== null);
+    if (hasScores) {
+      rawList.sort((a, b) => (b.score || 0) - (a.score || 0));
+    } else {
+      rawList.sort((a, b) => {
+        const aRank = a.rank !== undefined ? a.rank : 999;
+        const bRank = b.rank !== undefined ? b.rank : 999;
+        return aRank - bRank;
+      });
+    }
 
     const total = rawList.length;
     const top20Count = Math.ceil(total * 0.20);
@@ -40,11 +54,32 @@ export default function PeerComparison() {
         status = 'Watchlist';
       }
 
+      const bqPath = `../../../data/qualitative_insights/${item.company}/business_quality_signals.json`;
+      const cyPath = `../../../data/qualitative_insights/${item.company}/cyclicality_signals.json`;
+      const rpPath = `../../../data/qualitative_insights/${item.company}/return_profile_signals.json`;
+      const bgPath = `../../../data/qualitative_insights/${item.company}/governance_signals.json`;
+
+      const bqData = bqFiles[bqPath]?.default || bqFiles[bqPath];
+      const cyData = cyFiles[cyPath]?.default || cyFiles[cyPath];
+      const rpData = rpFiles[rpPath]?.default || rpFiles[rpPath];
+      const bgData = bgFiles[bgPath]?.default || bgFiles[bgPath];
+
+      const valueRank = foundIndustry?.rankings?.value_investor?.find(c => c.company === item.company);
+      const growthRank = foundIndustry?.rankings?.growth_investor?.find(c => c.company === item.company);
+      const safetyRank = foundIndustry?.rankings?.safety_investor?.find(c => c.company === item.company);
+
       return {
         name: item.company || 'Unknown',
         year: new Date().getFullYear(),
         status: status,
-        fileLink: null
+        score: item.score !== undefined ? item.score : null,
+        val: valueRank?.score !== undefined ? valueRank.score : null,
+        gro: growthRank?.score !== undefined ? growthRank.score : null,
+        saf: safetyRank?.score !== undefined ? safetyRank.score : null,
+        bq: bqData?.BQ !== undefined ? bqData.BQ : null,
+        cy: cyData?.CY !== undefined ? cyData.CY : null,
+        rp: rpData?.RP !== undefined ? rpData.RP : null,
+        bg: bgData?.BG !== undefined ? bgData.BG : null
       };
     });
   }, [symbol]);

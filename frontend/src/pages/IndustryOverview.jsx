@@ -1,11 +1,32 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { fetchIndustrySummary } from '../utils/dataFetcher';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
+
+const COLORS = [
+  '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', 
+  '#eab308', '#84cc16', '#22c55e', '#14b8a6', '#0ea5e9'
+];
+
+const CustomTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-[#12121e] border border-gray-700 p-3 rounded-lg shadow-2xl">
+        <p className="text-gray-100 font-bold mb-1">{(label || '').replace(/_/g, ' ')}</p>
+        <p className="text-insight-purple font-semibold text-sm">
+          Overall Score: <span className="text-white ml-1">{payload[0].value}</span>
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
 
 export default function IndustryOverview() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchIndustrySummary()
@@ -25,6 +46,12 @@ export default function IndustryOverview() {
 
   return (
     <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-8 fade-in">
+      <div className="flex items-center mb-2">
+        <Link to="/" className="text-gray-500 hover:text-insight-blue transition-colors flex items-center gap-2 text-sm font-medium">
+          <ArrowLeft size={16} /> Back to Home
+        </Link>
+      </div>
+
       <header className="mb-8">
         <h1 className="text-3xl md:text-4xl font-bold text-gray-100 mb-2">Industry Overview</h1>
         <p className="text-gray-400">Ranking and performance summary of all industries</p>
@@ -36,16 +63,35 @@ export default function IndustryOverview() {
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorBrand" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#8b5cf6" stopOpacity={1}/>
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.8}/>
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
                 <XAxis dataKey="industry" stroke="#666" tick={{fill: '#888', fontSize: 11}} tickLine={false} axisLine={false} />
                 <YAxis stroke="#666" tick={{fill: '#888', fontSize: 11}} tickLine={false} axisLine={false} />
                 <Tooltip 
                   cursor={{fill: '#2a2a3a'}}
-                  contentStyle={{ backgroundColor: '#1e1e1e', borderColor: '#333', borderRadius: '8px', color: '#fff' }}
+                  content={<CustomTooltip />}
                 />
-                <Bar dataKey="overall_score" radius={[4, 4, 0, 0]}>
+                <Bar 
+                  dataKey="overall_score" 
+                  radius={[4, 4, 0, 0]}
+                  onClick={(entry) => {
+                    if (entry && entry.industry) {
+                      navigate(`/industry/${encodeURIComponent(entry.industry)}`);
+                    }
+                  }}
+                  style={{ cursor: 'pointer' }}
+                >
                   {data.map((entry, index) => (
-                     <div key={`cell-${index}`} fill="#3b82f6" /> 
+                     <Cell 
+                       key={`cell-${index}`} 
+                       fill="url(#colorBrand)" 
+                       opacity={1 - (index / data.length) * 0.4}
+                     /> 
                   ))}
                 </Bar>
               </BarChart>
