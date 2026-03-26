@@ -39,7 +39,7 @@ export default function LandingPage() {
       <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-insight-purple/10 rounded-full blur-[150px] pointer-events-none" />
 
       {/* 1. Hero Section */}
-      <div className="z-10 text-center max-w-3xl w-full mb-20 mt-10">
+      <div className="relative z-50 text-center max-w-3xl w-full mb-20 mt-10">
         <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight mb-4">
           <span className="bg-clip-text text-transparent bg-gradient-to-r from-insight-blue via-indigo-400 to-insight-purple">
             InsightLedger+
@@ -49,7 +49,7 @@ export default function LandingPage() {
           Relative Stock Intelligence Platform
         </p>
         
-        <div className="flex justify-center w-full transform transition-transform duration-300 hover:scale-[1.02]">
+        <div className="relative z-50 flex justify-center w-full transform transition-transform duration-300 hover:scale-[1.02]">
           {/* We rely on the SearchBar internally handling its own glow on focus via focus-within */}
           <SearchBar className="shadow-xl" />
         </div>

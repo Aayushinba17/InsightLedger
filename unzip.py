@@ -2,7 +2,8 @@ import zipfile
 import shutil
 from pathlib import Path
 
-REPORTS_DIR = Path("data/reports")
+BASE_DIR = Path(__file__).resolve().parent
+REPORTS_DIR = BASE_DIR / "data" / "reports"
 
 
 def extract_and_flatten_zip(zip_path, company_folder):

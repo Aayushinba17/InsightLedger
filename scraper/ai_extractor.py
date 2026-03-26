@@ -29,7 +29,7 @@ genai.configure(api_key=API_KEY)
 BASE_DIR = Path(__file__).parent.parent
 SCRAPER_DIR = Path(__file__).parent  # scraper/ directory
 
-REPORTS_DIR = SCRAPER_DIR / "data" / "reports"  # scraper saves reports here
+REPORTS_DIR = BASE_DIR / "data" / "reports"
 INSIGHTS_DIR = BASE_DIR / "data" / "qualitative_insights"
 DATA_DIR = BASE_DIR / "data"
 
