@@ -522,7 +522,8 @@ def fetch_yfinance_metrics(symbols, progress_callback=None):
                     "Return over 1year": get_val(calculate_return(hist, 252), s_data, ["return over 1year", "return 1yr"]),
                     "Return over 3years": get_val(calculate_return(hist, 756), s_data, ["return over 3years", "return 3yr"]),
                     "Return over 5years": get_val(calculate_return(hist, 1260), s_data, ["return over 5years", "return 5yr"])
-                }
+                },
+                "Recent_News": top_headlines
             }
 
             save_path = QUANT_DIR / f"{symbol}_quant.json"
@@ -543,4 +544,5 @@ def fetch_yfinance_metrics(symbols, progress_callback=None):
 
 
 if __name__ == "__main__":
-    fetch_yfinance_metrics(["RELIANCE", "TCS"])
+    from symbols import get_nifty100_symbols
+    fetch_yfinance_metrics(get_nifty100_symbols())
