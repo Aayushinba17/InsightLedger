@@ -9,11 +9,12 @@ from pymongo import MongoClient, UpdateOne
 # ============================================================
 load_dotenv()
 
-# We are using local MongoDB as discussed! 
+# Get URI from .env, fallback to local only if .env is missing
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://127.0.0.1:27017/insightledger")
 
-# Connect to MongoDB 
-client = MongoClient(MONGO_URI)
+# Connect to MongoDB Atlas
+# Added tlsAllowInvalidCertificates=True to prevent SSL handshake errors on some machines
+client = MongoClient(MONGO_URI, tlsAllowInvalidCertificates=True)
 db = client['insightledger']
 
 # Define the collections
@@ -31,11 +32,13 @@ INDUSTRY_EVAL_DIR = DATA_DIR / "industry_evaluations"
 # ============================================================
 # 2. UPLOAD INDIVIDUAL COMPANIES (PHASE 1)
 # ============================================================
+
+
 def upload_individual_companies():
     print("\n" + "=" * 50)
     print("🚀 UPLOADING INDIVIDUAL COMPANIES TO LOCAL MONGODB")
     print("=" * 50)
-    
+
     if not INSIGHTS_DIR.exists():
         print("⚠ qualitative_insights directory not found. Skipping.")
         return
@@ -48,19 +51,19 @@ def upload_individual_companies():
         if company_folder.is_dir():
             symbol = company_folder.name
             json_path = company_folder / f"{symbol}_individual.json"
-            
+
             if json_path.exists():
                 try:
                     with open(json_path, 'r', encoding='utf-8') as f:
                         company_data = json.load(f)
-                        
+
                         # Ensure the symbol is explicitly stored at the top level
                         company_data["symbol"] = symbol
-                        
+
                         # Upsert operation (Update if exists, Insert if new)
                         op = UpdateOne(
-                            {"symbol": symbol}, 
-                            {"$set": company_data}, 
+                            {"symbol": symbol},
+                            {"$set": company_data},
                             upsert=True
                         )
                         operations.append(op)
@@ -71,13 +74,16 @@ def upload_individual_companies():
     if operations:
         result = companies_col.bulk_write(operations)
         print(f"✅ Successfully processed {processed_count} company files.")
-        print(f"📊 Inserted: {result.upserted_count} | Updated: {result.modified_count}")
+        print(
+            f"📊 Inserted: {result.upserted_count} | Updated: {result.modified_count}")
     else:
         print("⏭ No individual company JSONs found to upload.")
 
 # ============================================================
 # 3. UPLOAD SECTOR PEER EVALUATIONS (PHASE 2)
 # ============================================================
+
+
 def upload_peer_evaluations():
     print("\n" + "=" * 50)
     print("🚀 UPLOADING SECTOR LEADERBOARDS TO LOCAL MONGODB")
@@ -94,18 +100,18 @@ def upload_peer_evaluations():
         try:
             with open(eval_file, 'r', encoding='utf-8') as f:
                 sector_data = json.load(f)
-                
+
                 # UPDATED: Now perfectly matches the new schema_peer_eval.json
                 sector_name = sector_data.get("industry")
-                
+
                 # Fallback just in case the key is missing but the file exists
                 if not sector_name:
                     sector_name = eval_file.stem.replace("_evaluation", "")
-                
+
                 # UPDATED: Upsert logic now checks the "industry" key directly
                 op = UpdateOne(
-                    {"industry": sector_name}, 
-                    {"$set": sector_data}, 
+                    {"industry": sector_name},
+                    {"$set": sector_data},
                     upsert=True
                 )
                 operations.append(op)
@@ -115,14 +121,18 @@ def upload_peer_evaluations():
 
     if operations:
         result = sectors_col.bulk_write(operations)
-        print(f"✅ Successfully processed {processed_count} sector evaluations.")
-        print(f"📊 Inserted: {result.upserted_count} | Updated: {result.modified_count}")
+        print(
+            f"✅ Successfully processed {processed_count} sector evaluations.")
+        print(
+            f"📊 Inserted: {result.upserted_count} | Updated: {result.modified_count}")
     else:
         print("⏭ No peer evaluation JSONs found to upload.")
 
 # ============================================================
 # 4. UPLOAD INDUSTRY EVALUATIONS
 # ============================================================
+
+
 def upload_industry_evaluations():
     print("\n" + "=" * 50)
     print("🚀 UPLOADING INDUSTRY EVALUATIONS TO LOCAL MONGODB")
@@ -171,10 +181,13 @@ def upload_industry_evaluations():
 
     if operations:
         result = industries_col.bulk_write(operations)
-        print(f"✅ Successfully processed {processed_count} industry evaluations.")
-        print(f"📊 Inserted: {result.upserted_count} | Updated: {result.modified_count}")
+        print(
+            f"✅ Successfully processed {processed_count} industry evaluations.")
+        print(
+            f"📊 Inserted: {result.upserted_count} | Updated: {result.modified_count}")
     else:
         print("⏭ No industry evaluation JSONs found to upload.")
+
 
 # ============================================================
 # 5. EXECUTE
@@ -183,12 +196,12 @@ if __name__ == "__main__":
     try:
         # Verify connection before starting
         client.admin.command('ping')
-        print(f"🟢 Successfully connected to Local MongoDB at {MONGO_URI}!")
-        
+        print(f"🟢 Successfully connected to MongoDB Atlas!")
+
         upload_individual_companies()
         upload_peer_evaluations()
         upload_industry_evaluations()
-        
+
         print("\n🎉 Database migration complete!")
     except Exception as e:
-        print(f"\n🔴 Failed to connect to MongoDB. Is your local MongoDB server running?\nError: {e}")
+        print(f"\n🔴 Failed to connect to MongoDB.\nError: {e}")

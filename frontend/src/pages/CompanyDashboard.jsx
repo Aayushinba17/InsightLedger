@@ -1,25 +1,64 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { fetchQualitativeAnalysis } from '../utils/dataFetcher';
+import { fetchQualitativeAnalysis, fetchAllSectors } from '../utils/dataFetcher';
 import TagBadge from '../components/TagBadge';
 import ScoreCard from '../components/ScoreCard';
 import MetricCard from '../components/MetricCard';
 import ChartCard from '../components/ChartCard';
 import { ArrowLeft, Users, ArrowUpRight } from 'lucide-react';
 
-const peerFiles = import.meta.glob('../../../data/peer_evaluations/*_evaluation.json', { eager: true });
-
 export default function CompanyDashboard() {
   const { symbol } = useParams();
   const [data, setData] = useState(null);
+  const [badgeLabel, setBadgeLabel] = useState('Watchlist');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeNewsIdx, setActiveNewsIdx] = useState(null);
 
   useEffect(() => {
-    fetchQualitativeAnalysis(symbol)
-      .then((res) => {
-        setData(res);
+    setLoading(true);
+    const symbolUpper = symbol.toUpperCase();
+
+    // Fetch Company Data and All Sectors simultaneously from the API
+    Promise.all([
+      fetchQualitativeAnalysis(symbolUpper),
+      fetchAllSectors()
+    ])
+      .then(([companyRes, sectorsRes]) => {
+        setData(companyRes);
+
+        // --- NEW TAG LOGIC (Using API Data) ---
+        let label = 'Watchlist';
+        try {
+          const targetIndustry = sectorsRes.find(ind => 
+            ind?.rankings?.fundamental_investor?.some(c => c.company === symbolUpper)
+          );
+
+          if (targetIndustry && targetIndustry.rankings?.fundamental_investor) {
+            const rawList = [...targetIndustry.rankings.fundamental_investor];
+            const hasScores = !!rawList.some(item => item.score !== undefined && item.score !== null);
+
+            if (hasScores) {
+              rawList.sort((a, b) => (b.score || 0) - (a.score || 0));
+            } else {
+              rawList.sort((a, b) => (a.rank !== undefined ? a.rank : 999) - (b.rank !== undefined ? b.rank : 999));
+            }
+
+            const total = rawList.length;
+            const top20Count = Math.ceil(total * 0.20);
+            const mid50Count = Math.ceil(total * 0.50);
+            const computedIndex = rawList.findIndex(item => item.company === symbolUpper);
+
+            if (computedIndex !== -1) {
+              if (computedIndex < top20Count) label = 'Dash Pick';
+              else if (computedIndex < top20Count + mid50Count) label = 'Watchlist';
+              else label = 'Avoid';
+            }
+          }
+        } catch (err) {
+          console.error('Error calculating badge:', err);
+        }
+        setBadgeLabel(label);
         setLoading(false);
       })
       .catch((err) => {
@@ -56,57 +95,6 @@ export default function CompanyDashboard() {
   const recentMetrics = quantitative_data?.Recent || {};
   const historical = quantitative_data?.Historical || {};
   const recentNews = quantitative_data?.Recent_News || quantitative_data?.recent_news || [];
-
-  // --- NEW TAG LOGIC ---
-  let badgeLabel = 'Watchlist';
-  try {
-    let targetIndustry = null;
-
-    for (const path in peerFiles) {
-      const mod = peerFiles[path];
-      const ind = mod.default || mod;
-      if (ind?.rankings?.fundamental_investor?.some(c => c.company === symbolUpper)) {
-        targetIndustry = ind;
-        break;
-      }
-    }
-
-    if (targetIndustry && targetIndustry.rankings?.fundamental_investor) {
-      const rawList = [...targetIndustry.rankings.fundamental_investor];
-      const hasScores = !!rawList.some(item => item.score !== undefined && item.score !== null);
-
-      if (hasScores) {
-        rawList.sort((a, b) => (b.score || 0) - (a.score || 0));
-      } else {
-        // Fallback to index-based ranking or explicitly using the rank parameter
-        rawList.sort((a, b) => {
-          const aRank = a.rank !== undefined ? a.rank : 999;
-          const bRank = b.rank !== undefined ? b.rank : 999;
-          return aRank - bRank;
-        });
-      }
-
-      const total = rawList.length;
-      const top20Count = Math.ceil(total * 0.20);
-      const mid50Count = Math.ceil(total * 0.50);
-
-      const computedIndex = rawList.findIndex(item => item.company === symbolUpper);
-
-      if (computedIndex !== -1) {
-        if (computedIndex < top20Count) {
-          badgeLabel = 'Dash Pick';
-        } else if (computedIndex < top20Count + mid50Count) {
-          badgeLabel = 'Watchlist';
-        } else {
-          badgeLabel = 'Avoid';
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Error calculating badge:', err);
-    badgeLabel = 'Watchlist'; // fallback gracefully
-  }
-  // --- END TAG LOGIC ---
 
   const Chart_Data = [
     { date: '5Y', value: historical['Return over 5years'] ? historical['Return over 5years'] * 100 : 0 },
