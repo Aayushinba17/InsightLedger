@@ -132,113 +132,70 @@
 
 
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { cn } from '../utils/cn';
-
-const companyFiles = import.meta.glob('../../../data/qualitative_insights/*/*_individual.json', { eager: true });
-const oldCompanyFiles = import.meta.glob('../../../data/qualitative_insights/*/business_overview.json', { eager: true });
-const industrySummaryFile = import.meta.glob('../../../data/industry_evaluations/_industry_summary.json', { eager: true });
+import { fetchAllSectors } from '../utils/dataFetcher'; // Import your fetcher
 
 export default function SearchBar({ className }) {
   const [query, setQuery] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
-  // 🟢 NEW: State to track which item is highlighted via keyboard
-  const [selectedIndex, setSelectedIndex] = useState(-1); 
-  
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [options, setOptions] = useState([]); // Changed to State
+
   const navigate = useNavigate();
   const wrapperRef = useRef(null);
 
-  const options = useMemo(() => {
-    let opts = [];
-    try {
-      // 1. Get companies from directory paths
-      const companies = new Set();
-      for (const path in companyFiles) {
-        const parts = path.split('/');
-        const symbol = parts[parts.length - 2];
-        if (symbol) companies.add(symbol);
-      }
-      for (const path in oldCompanyFiles) {
-        const parts = path.split('/');
-        const symbol = parts[parts.length - 2];
-        if (symbol) companies.add(symbol);
-      }
-      companies.forEach(c => {
-        opts.push({ label: c, type: 'company', value: c });
-      });
+  // 🟢 NEW: Fetch search options from your API instead of local files
+  useEffect(() => {
+    async function loadOptions() {
+      try {
+        // Fetch sectors/industries from MongoDB via Render
+        const sectors = await fetchAllSectors();
 
-      // 2. Get industries from _industry_summary.json
-      let indSummary = null;
-      for (const path in industrySummaryFile) {
-        indSummary = industrySummaryFile[path]?.default || industrySummaryFile[path];
+        const formattedOptions = sectors.map(item => ({
+          label: item.industry.replace(/_/g, ' '),
+          type: 'industry',
+          value: item.industry
+        }));
+
+        // Note: If you have a separate "fetchCompanies" endpoint, 
+        // you'd call it here and add it to the array too.
+        setOptions(formattedOptions);
+      } catch (e) {
+        console.error("Error loading search options from API:", e);
       }
-      if (indSummary?.rankings) {
-        indSummary.rankings.forEach(r => {
-          if (r.industry) {
-            const diplayName = r.industry.replace(/_/g, ' ');
-            opts.push({ label: diplayName, type: 'industry', value: r.industry });
-          }
-        });
-      }
-    } catch (e) {
-      console.error("Error loading search options:", e);
     }
-    return opts;
+    loadOptions();
   }, []);
 
-  const filteredOptions = query.trim() === '' 
-    ? [] 
+  const filteredOptions = query.trim() === ''
+    ? []
     : options.filter(opt => opt.label.toLowerCase().includes(query.toLowerCase())).slice(0, 10);
 
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
-        setShowDropdown(false);
-        setSelectedIndex(-1); // 🟢 Reset highlight when clicking outside
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [wrapperRef]);
+  // ... (Keep your handleKeyDown and handleClickOutside logic the same) ...
 
-  // 🟢 NEW: The Keyboard Handler
   const handleKeyDown = (e) => {
     if (!showDropdown || filteredOptions.length === 0) return;
-
     if (e.key === 'ArrowDown') {
-      e.preventDefault(); // Stops cursor from jumping to the end of the input text
+      e.preventDefault();
       setSelectedIndex((prev) => (prev < filteredOptions.length - 1 ? prev + 1 : prev));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setSelectedIndex((prev) => (prev > 0 ? prev - 1 : -1));
     } else if (e.key === 'Enter') {
-      // If an item is highlighted, select it. Otherwise, let the normal form submission happen.
       if (selectedIndex >= 0 && selectedIndex < filteredOptions.length) {
-        e.preventDefault(); 
+        e.preventDefault();
         handleSelect(filteredOptions[selectedIndex]);
       }
-    } else if (e.key === 'Escape') {
-      // Professional touch: Escape key closes the menu
-      setShowDropdown(false);
-      setSelectedIndex(-1);
-    }
-  };
-
-  const handleSearch = (e) => {
-    e.preventDefault();
-    if (query.trim()) {
-      navigate(`/company/${query.trim().toUpperCase()}`);
-      setShowDropdown(false);
-      setSelectedIndex(-1);
     }
   };
 
   const handleSelect = (opt) => {
     setQuery(opt.label);
     setShowDropdown(false);
-    setSelectedIndex(-1); // 🟢 Reset highlight after selection
+    setSelectedIndex(-1);
     if (opt.type === 'company') {
       navigate(`/company/${opt.value.toUpperCase()}`);
     } else {
@@ -248,7 +205,10 @@ export default function SearchBar({ className }) {
 
   return (
     <div ref={wrapperRef} className={cn("relative w-full max-w-xl", className)}>
-      <form onSubmit={handleSearch}>
+      <form onSubmit={(e) => {
+        e.preventDefault();
+        if (query.trim()) navigate(`/company/${query.trim().toUpperCase()}`);
+      }}>
         <div className="relative flex items-center w-full h-14 rounded-full focus-within:shadow-lg bg-insight-card border border-gray-700 overflow-hidden transition-all duration-300 focus-within:border-insight-blue focus-within:ring-2 focus-within:ring-insight-blue/20">
           <div className="grid place-items-center h-full w-12 text-gray-400">
             <Search size={20} />
@@ -256,16 +216,15 @@ export default function SearchBar({ className }) {
           <input
             className="peer h-full w-full outline-none text-sm text-gray-100 bg-transparent pr-2 placeholder-gray-500"
             type="text"
-            id="search"
             placeholder="Search by company or industry..."
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
               setShowDropdown(true);
-              setSelectedIndex(-1); // 🟢 Reset highlight when they type a new letter
+              setSelectedIndex(-1);
             }}
             onFocus={() => setShowDropdown(true)}
-            onKeyDown={handleKeyDown} // 🟢 Attach the keyboard listener here
+            onKeyDown={handleKeyDown}
             autoComplete="off"
           />
           <button type="submit" className="h-full px-6 bg-gradient-to-r from-insight-blue to-insight-purple text-white font-semibold text-sm hover:opacity-90 transition-opacity">
@@ -278,15 +237,12 @@ export default function SearchBar({ className }) {
         <div className="absolute z-[999] top-full mt-2 left-0 w-full bg-[#1a1a2e] border border-gray-700 rounded-xl overflow-hidden shadow-2xl">
           <ul className="max-h-64 overflow-y-auto w-full">
             {filteredOptions.map((opt, idx) => (
-              <li 
+              <li
                 key={idx}
-                // 🟢 NEW: Dynamically apply a lighter background if this row is selectedIndex
-                className={`px-4 py-3 cursor-pointer flex items-center justify-between border-b border-gray-800/50 last:border-none transition-colors ${
-                  selectedIndex === idx ? 'bg-gray-700' : 'hover:bg-gray-800'
-                }`}
+                className={`px-4 py-3 cursor-pointer flex items-center justify-between border-b border-gray-800/50 last:border-none ${selectedIndex === idx ? 'bg-gray-700' : 'hover:bg-gray-800'
+                  }`}
                 onClick={() => handleSelect(opt)}
-                onMouseEnter={() => setSelectedIndex(idx)} // 🟢 Syncs mouse hover with keyboard index
-                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setSelectedIndex(idx)}
               >
                 <span className="text-sm font-medium text-gray-200">{opt.label}</span>
                 <span className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-400 capitalize">{opt.type}</span>
