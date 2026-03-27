@@ -96,6 +96,13 @@ def get_industry_by_name(industry_name: str):
         raise HTTPException(status_code=404, detail="Industry not found")
     return data
 
+@app.get("/api/companies")
+def get_all_companies():
+    """Fetch a list of all company ticker symbols for the search bar"""
+    # Grabs just the "symbol" field from all documents in the companies collection
+    companies = db.companies.find({}, {"_id": 0, "symbol": 1})
+    # Returns a simple list of strings like ["HDFCBANK", "INFY", "TCS"]
+    return [company["symbol"] for company in companies if "symbol" in company]
 
 # ==========================================
 # EXECUTE

@@ -136,48 +136,68 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { cn } from '../utils/cn';
-import { fetchAllSectors } from '../utils/dataFetcher'; // Import your fetcher
+
+// 🟢 Import your fetch functions (Adjust the path if your dataFetcher is in a different folder)
+import { fetchAllSectors, fetchQualitativeAnalysis } from '../utils/dataFetcher';
 
 export default function SearchBar({ className }) {
   const [query, setQuery] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState(-1);
-  const [options, setOptions] = useState([]); // Changed to State
-
+  const [selectedIndex, setSelectedIndex] = useState(-1); 
+  const [options, setOptions] = useState([]); // 🟢 Replaced useMemo with state for API data
+  
   const navigate = useNavigate();
   const wrapperRef = useRef(null);
 
-  // 🟢 NEW: Fetch search options from your API instead of local files
+  // 🟢 NEW: Fetch BOTH Companies and Industries from the API on load
   useEffect(() => {
-    async function loadOptions() {
+    async function loadSearchData() {
+      let opts = [];
       try {
-        // Fetch sectors/industries from MongoDB via Render
-        const sectors = await fetchAllSectors();
+        // 1. Fetch Companies
+        const companies = await fetchAllCompanies();
+        companies.forEach(symbol => {
+          opts.push({ label: symbol, type: 'company', value: symbol });
+        });
 
-        const formattedOptions = sectors.map(item => ({
-          label: item.industry.replace(/_/g, ' '),
-          type: 'industry',
-          value: item.industry
-        }));
-
-        // Note: If you have a separate "fetchCompanies" endpoint, 
-        // you'd call it here and add it to the array too.
-        setOptions(formattedOptions);
+        // 2. Fetch Industries
+        const indSummary = await fetchIndustrySummary();
+        if (indSummary?.rankings) {
+          indSummary.rankings.forEach(r => {
+            if (r.industry) {
+              const displayName = r.industry.replace(/_/g, ' ');
+              opts.push({ label: displayName, type: 'industry', value: r.industry });
+            }
+          });
+        }
+        
+        setOptions(opts);
       } catch (e) {
         console.error("Error loading search options from API:", e);
       }
     }
-    loadOptions();
+    
+    loadSearchData();
   }, []);
 
-  const filteredOptions = query.trim() === ''
-    ? []
+  const filteredOptions = query.trim() === '' 
+    ? [] 
     : options.filter(opt => opt.label.toLowerCase().includes(query.toLowerCase())).slice(0, 10);
 
-  // ... (Keep your handleKeyDown and handleClickOutside logic the same) ...
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setShowDropdown(false);
+        setSelectedIndex(-1);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [wrapperRef]);
 
   const handleKeyDown = (e) => {
     if (!showDropdown || filteredOptions.length === 0) return;
+
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       setSelectedIndex((prev) => (prev < filteredOptions.length - 1 ? prev + 1 : prev));
@@ -186,9 +206,21 @@ export default function SearchBar({ className }) {
       setSelectedIndex((prev) => (prev > 0 ? prev - 1 : -1));
     } else if (e.key === 'Enter') {
       if (selectedIndex >= 0 && selectedIndex < filteredOptions.length) {
-        e.preventDefault();
+        e.preventDefault(); 
         handleSelect(filteredOptions[selectedIndex]);
       }
+    } else if (e.key === 'Escape') {
+      setShowDropdown(false);
+      setSelectedIndex(-1);
+    }
+  };
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    if (query.trim()) {
+      navigate(`/company/${query.trim().toUpperCase()}`);
+      setShowDropdown(false);
+      setSelectedIndex(-1);
     }
   };
 
@@ -205,10 +237,7 @@ export default function SearchBar({ className }) {
 
   return (
     <div ref={wrapperRef} className={cn("relative w-full max-w-xl", className)}>
-      <form onSubmit={(e) => {
-        e.preventDefault();
-        if (query.trim()) navigate(`/company/${query.trim().toUpperCase()}`);
-      }}>
+      <form onSubmit={handleSearch}>
         <div className="relative flex items-center w-full h-14 rounded-full focus-within:shadow-lg bg-insight-card border border-gray-700 overflow-hidden transition-all duration-300 focus-within:border-insight-blue focus-within:ring-2 focus-within:ring-insight-blue/20">
           <div className="grid place-items-center h-full w-12 text-gray-400">
             <Search size={20} />
@@ -216,6 +245,7 @@ export default function SearchBar({ className }) {
           <input
             className="peer h-full w-full outline-none text-sm text-gray-100 bg-transparent pr-2 placeholder-gray-500"
             type="text"
+            id="search"
             placeholder="Search by company or industry..."
             value={query}
             onChange={(e) => {
@@ -237,12 +267,14 @@ export default function SearchBar({ className }) {
         <div className="absolute z-[999] top-full mt-2 left-0 w-full bg-[#1a1a2e] border border-gray-700 rounded-xl overflow-hidden shadow-2xl">
           <ul className="max-h-64 overflow-y-auto w-full">
             {filteredOptions.map((opt, idx) => (
-              <li
+              <li 
                 key={idx}
-                className={`px-4 py-3 cursor-pointer flex items-center justify-between border-b border-gray-800/50 last:border-none ${selectedIndex === idx ? 'bg-gray-700' : 'hover:bg-gray-800'
-                  }`}
+                className={`px-4 py-3 cursor-pointer flex items-center justify-between border-b border-gray-800/50 last:border-none transition-colors ${
+                  selectedIndex === idx ? 'bg-gray-700' : 'hover:bg-gray-800'
+                }`}
                 onClick={() => handleSelect(opt)}
                 onMouseEnter={() => setSelectedIndex(idx)}
+                onMouseDown={(e) => e.preventDefault()}
               >
                 <span className="text-sm font-medium text-gray-200">{opt.label}</span>
                 <span className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-400 capitalize">{opt.type}</span>

@@ -18,3 +18,9 @@ export async function fetchAllSectors() {
   if (!res.ok) throw new Error('Failed to fetch sectors');
   return res.json();
 }
+
+export async function fetchAllCompanies() {
+  const res = await fetch(`${API_BASE_URL}/api/companies`);
+  if (!res.ok) throw new Error('Failed to fetch companies');
+  return res.json();
+}
