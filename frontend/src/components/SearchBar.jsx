@@ -138,14 +138,14 @@ import { Search } from 'lucide-react';
 import { cn } from '../utils/cn';
 
 // 🟢 Import your fetch functions (Adjust the path if your dataFetcher is in a different folder)
-import { fetchAllSectors, fetchQualitativeAnalysis } from '../utils/dataFetcher';
+import { fetchIndustrySummary, fetchAllCompanies } from '../utils/dataFetcher';
 
 export default function SearchBar({ className }) {
   const [query, setQuery] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState(-1); 
+  const [selectedIndex, setSelectedIndex] = useState(-1);
   const [options, setOptions] = useState([]); // 🟢 Replaced useMemo with state for API data
-  
+
   const navigate = useNavigate();
   const wrapperRef = useRef(null);
 
@@ -170,18 +170,18 @@ export default function SearchBar({ className }) {
             }
           });
         }
-        
+
         setOptions(opts);
       } catch (e) {
         console.error("Error loading search options from API:", e);
       }
     }
-    
+
     loadSearchData();
   }, []);
 
-  const filteredOptions = query.trim() === '' 
-    ? [] 
+  const filteredOptions = query.trim() === ''
+    ? []
     : options.filter(opt => opt.label.toLowerCase().includes(query.toLowerCase())).slice(0, 10);
 
   useEffect(() => {
@@ -206,7 +206,7 @@ export default function SearchBar({ className }) {
       setSelectedIndex((prev) => (prev > 0 ? prev - 1 : -1));
     } else if (e.key === 'Enter') {
       if (selectedIndex >= 0 && selectedIndex < filteredOptions.length) {
-        e.preventDefault(); 
+        e.preventDefault();
         handleSelect(filteredOptions[selectedIndex]);
       }
     } else if (e.key === 'Escape') {
@@ -267,11 +267,10 @@ export default function SearchBar({ className }) {
         <div className="absolute z-[999] top-full mt-2 left-0 w-full bg-[#1a1a2e] border border-gray-700 rounded-xl overflow-hidden shadow-2xl">
           <ul className="max-h-64 overflow-y-auto w-full">
             {filteredOptions.map((opt, idx) => (
-              <li 
+              <li
                 key={idx}
-                className={`px-4 py-3 cursor-pointer flex items-center justify-between border-b border-gray-800/50 last:border-none transition-colors ${
-                  selectedIndex === idx ? 'bg-gray-700' : 'hover:bg-gray-800'
-                }`}
+                className={`px-4 py-3 cursor-pointer flex items-center justify-between border-b border-gray-800/50 last:border-none transition-colors ${selectedIndex === idx ? 'bg-gray-700' : 'hover:bg-gray-800'
+                  }`}
                 onClick={() => handleSelect(opt)}
                 onMouseEnter={() => setSelectedIndex(idx)}
                 onMouseDown={(e) => e.preventDefault()}
