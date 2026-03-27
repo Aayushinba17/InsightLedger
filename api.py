@@ -9,10 +9,16 @@ load_dotenv()
 
 app = FastAPI(title="Insight Ledger API")
 
+origins = [
+    "http://localhost:5173", # Keep this for local testing
+    "https://insightledger.onrender.com", 
+    "https://your-exact-vercel-url.vercel.app" # <-- Paste your Vercel URL here! (No slash at the end)
+]
+
 # Setup CORS so your React frontend (localhost:5173) can talk to this API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For production, change this to your Vercel URL
+    allow_origins=origins,  # For production, change this to your Vercel URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
