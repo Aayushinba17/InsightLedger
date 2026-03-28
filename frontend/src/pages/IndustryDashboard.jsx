@@ -10,10 +10,16 @@ export default function IndustryDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
+  // ... existing imports ...
+
   useEffect(() => {
     const fetchIndustryData = async () => {
       try {
-        const res = await fetch(`/data/industry_evaluations/${encodeURIComponent(industry)}_industry.json`);
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+        // NEW WAY: Fetching from your Python API
+        const res = await fetch(`${API_BASE_URL}/api/industry/${encodeURIComponent(industry)}`);
+
         if (!res.ok) throw new Error('Not found');
         const json = await res.json();
         setData(json);
@@ -26,6 +32,8 @@ export default function IndustryDashboard() {
     };
     fetchIndustryData();
   }, [industry]);
+
+  // ... keep the rest of the file exactly the same ...
 
   if (loading) return <div className="p-10 text-center text-gray-400">Loading Industry Dashboard...</div>;
   if (error || !data) return <div className="p-10 text-center text-red-400">Industry data not found.</div>;
@@ -63,30 +71,30 @@ export default function IndustryDashboard() {
         <div className="relative z-10">
           <h1 className="text-3xl md:text-4xl font-bold text-gray-100">{(data.industry || industry).replace(/_/g, ' ')}</h1>
           <p className="text-gray-400 mt-2 flex gap-4">
-             <span className="bg-insight-blue/20 text-insight-blue px-3 py-1 rounded-full text-sm font-bold border border-insight-blue/30">
-               Rank #{data.industry_rank || 'N/A'}
-             </span>
-             <span className="flex items-center gap-1 text-sm font-semibold text-gray-300">
-               Overall Score: <span className="text-white">{data.overall_industry_score !== undefined ? data.overall_industry_score : 'N/A'}</span>
-             </span>
+            <span className="bg-insight-blue/20 text-insight-blue px-3 py-1 rounded-full text-sm font-bold border border-insight-blue/30">
+              Rank #{data.industry_rank || 'N/A'}
+            </span>
+            <span className="flex items-center gap-1 text-sm font-semibold text-gray-300">
+              Overall Score: <span className="text-white">{data.overall_industry_score !== undefined ? data.overall_industry_score : 'N/A'}</span>
+            </span>
           </p>
         </div>
         <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-[80px]" />
       </header>
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
-         <div className="bg-[#12121e] border border-gray-800 p-6 rounded-2xl">
-           <h3 className="text-gray-400 text-sm tracking-widest uppercase font-bold mb-2">Revenue Health</h3>
-           <p className="text-3xl font-extrabold text-white">{revHealth ?? 'N/A'}</p>
-         </div>
-         <div className="bg-[#12121e] border border-gray-800 p-6 rounded-2xl">
-           <h3 className="text-gray-400 text-sm tracking-widest uppercase font-bold mb-2">Growth</h3>
-           <p className="text-3xl font-extrabold text-white">{growth ?? 'N/A'}</p>
-         </div>
-         <div className="bg-[#12121e] border border-gray-800 p-6 rounded-2xl">
-           <h3 className="text-gray-400 text-sm tracking-widest uppercase font-bold mb-2">Investment Safety</h3>
-           <p className="text-3xl font-extrabold text-white">{invSafety ?? 'N/A'}</p>
-         </div>
+        <div className="bg-[#12121e] border border-gray-800 p-6 rounded-2xl">
+          <h3 className="text-gray-400 text-sm tracking-widest uppercase font-bold mb-2">Revenue Health</h3>
+          <p className="text-3xl font-extrabold text-white">{revHealth ?? 'N/A'}</p>
+        </div>
+        <div className="bg-[#12121e] border border-gray-800 p-6 rounded-2xl">
+          <h3 className="text-gray-400 text-sm tracking-widest uppercase font-bold mb-2">Growth</h3>
+          <p className="text-3xl font-extrabold text-white">{growth ?? 'N/A'}</p>
+        </div>
+        <div className="bg-[#12121e] border border-gray-800 p-6 rounded-2xl">
+          <h3 className="text-gray-400 text-sm tracking-widest uppercase font-bold mb-2">Investment Safety</h3>
+          <p className="text-3xl font-extrabold text-white">{invSafety ?? 'N/A'}</p>
+        </div>
       </section>
 
       <section className="bg-insight-card p-6 rounded-2xl border border-gray-800 shadow relative">
@@ -96,27 +104,27 @@ export default function IndustryDashboard() {
             <BarChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={1}/>
-                  <stop offset="95%" stopColor="#1e3a8a" stopOpacity={0.8}/>
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={1} />
+                  <stop offset="95%" stopColor="#1e3a8a" stopOpacity={0.8} />
                 </linearGradient>
                 <linearGradient id="colorGro" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={1}/>
-                  <stop offset="95%" stopColor="#064e3b" stopOpacity={0.8}/>
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={1} />
+                  <stop offset="95%" stopColor="#064e3b" stopOpacity={0.8} />
                 </linearGradient>
                 <linearGradient id="colorSaf" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={1}/>
-                  <stop offset="95%" stopColor="#78350f" stopOpacity={0.8}/>
+                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={1} />
+                  <stop offset="95%" stopColor="#78350f" stopOpacity={0.8} />
                 </linearGradient>
                 <linearGradient id="colorCom" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#8b5cf6" stopOpacity={1}/>
-                  <stop offset="95%" stopColor="#4c1d95" stopOpacity={0.8}/>
+                  <stop offset="5%" stopColor="#8b5cf6" stopOpacity={1} />
+                  <stop offset="95%" stopColor="#4c1d95" stopOpacity={0.8} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
-              <XAxis dataKey="name" stroke="#888" tick={{fill: '#888', fontSize: 12}} tickLine={false} axisLine={false} />
-              <YAxis stroke="#888" tick={{fill: '#888', fontSize: 12}} tickLine={false} axisLine={false} />
-              <Tooltip 
-                cursor={{fill: '#2a2a3a'}}
+              <XAxis dataKey="name" stroke="#888" tick={{ fill: '#888', fontSize: 12 }} tickLine={false} axisLine={false} />
+              <YAxis stroke="#888" tick={{ fill: '#888', fontSize: 12 }} tickLine={false} axisLine={false} />
+              <Tooltip
+                cursor={{ fill: '#2a2a3a' }}
                 contentStyle={{ backgroundColor: '#1e1e1e', borderColor: '#333', borderRadius: '8px', color: '#fff' }}
                 itemStyle={{ color: '#fff' }}
               />

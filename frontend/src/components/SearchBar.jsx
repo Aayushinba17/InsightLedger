@@ -132,95 +132,84 @@
 
 
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { cn } from '../utils/cn';
 
-const companyFiles = import.meta.glob('../../../data/qualitative_insights/*/*_individual.json', { eager: true });
-const oldCompanyFiles = import.meta.glob('../../../data/qualitative_insights/*/business_overview.json', { eager: true });
-const industrySummaryFile = import.meta.glob('../../../data/industry_evaluations/_industry_summary.json', { eager: true });
+// 🟢 Import your fetch functions (Adjust the path if your dataFetcher is in a different folder)
+import { fetchIndustrySummary, fetchAllCompanies } from '../utils/dataFetcher';
 
 export default function SearchBar({ className }) {
   const [query, setQuery] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
-  // 🟢 NEW: State to track which item is highlighted via keyboard
-  const [selectedIndex, setSelectedIndex] = useState(-1); 
-  
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [options, setOptions] = useState([]); // 🟢 Replaced useMemo with state for API data
+
   const navigate = useNavigate();
   const wrapperRef = useRef(null);
 
-  const options = useMemo(() => {
-    let opts = [];
-    try {
-      // 1. Get companies from directory paths
-      const companies = new Set();
-      for (const path in companyFiles) {
-        const parts = path.split('/');
-        const symbol = parts[parts.length - 2];
-        if (symbol) companies.add(symbol);
-      }
-      for (const path in oldCompanyFiles) {
-        const parts = path.split('/');
-        const symbol = parts[parts.length - 2];
-        if (symbol) companies.add(symbol);
-      }
-      companies.forEach(c => {
-        opts.push({ label: c, type: 'company', value: c });
-      });
-
-      // 2. Get industries from _industry_summary.json
-      let indSummary = null;
-      for (const path in industrySummaryFile) {
-        indSummary = industrySummaryFile[path]?.default || industrySummaryFile[path];
-      }
-      if (indSummary?.rankings) {
-        indSummary.rankings.forEach(r => {
-          if (r.industry) {
-            const diplayName = r.industry.replace(/_/g, ' ');
-            opts.push({ label: diplayName, type: 'industry', value: r.industry });
-          }
+  // 🟢 NEW: Fetch BOTH Companies and Industries from the API on load
+  useEffect(() => {
+    async function loadSearchData() {
+      let opts = [];
+      try {
+        // 1. Fetch Companies
+        const companies = await fetchAllCompanies();
+        companies.forEach(symbol => {
+          opts.push({ label: symbol, type: 'company', value: symbol });
         });
+
+        // 2. Fetch Industries
+        const indSummary = await fetchIndustrySummary();
+        if (indSummary?.rankings) {
+          indSummary.rankings.forEach(r => {
+            if (r.industry) {
+              const displayName = r.industry.replace(/_/g, ' ');
+              opts.push({ label: displayName, type: 'industry', value: r.industry });
+            }
+          });
+        }
+
+        setOptions(opts);
+      } catch (e) {
+        console.error("Error loading search options from API:", e);
       }
-    } catch (e) {
-      console.error("Error loading search options:", e);
     }
-    return opts;
+
+    loadSearchData();
   }, []);
 
-  const filteredOptions = query.trim() === '' 
-    ? [] 
+  const filteredOptions = query.trim() === ''
+    ? []
     : options.filter(opt => opt.label.toLowerCase().includes(query.toLowerCase())).slice(0, 10);
 
   useEffect(() => {
     function handleClickOutside(event) {
       if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
         setShowDropdown(false);
-        setSelectedIndex(-1); // 🟢 Reset highlight when clicking outside
+        setSelectedIndex(-1);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [wrapperRef]);
 
-  // 🟢 NEW: The Keyboard Handler
   const handleKeyDown = (e) => {
     if (!showDropdown || filteredOptions.length === 0) return;
 
     if (e.key === 'ArrowDown') {
-      e.preventDefault(); // Stops cursor from jumping to the end of the input text
+      e.preventDefault();
       setSelectedIndex((prev) => (prev < filteredOptions.length - 1 ? prev + 1 : prev));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setSelectedIndex((prev) => (prev > 0 ? prev - 1 : -1));
     } else if (e.key === 'Enter') {
-      // If an item is highlighted, select it. Otherwise, let the normal form submission happen.
       if (selectedIndex >= 0 && selectedIndex < filteredOptions.length) {
-        e.preventDefault(); 
+        e.preventDefault();
         handleSelect(filteredOptions[selectedIndex]);
       }
     } else if (e.key === 'Escape') {
-      // Professional touch: Escape key closes the menu
       setShowDropdown(false);
       setSelectedIndex(-1);
     }
@@ -238,7 +227,7 @@ export default function SearchBar({ className }) {
   const handleSelect = (opt) => {
     setQuery(opt.label);
     setShowDropdown(false);
-    setSelectedIndex(-1); // 🟢 Reset highlight after selection
+    setSelectedIndex(-1);
     if (opt.type === 'company') {
       navigate(`/company/${opt.value.toUpperCase()}`);
     } else {
@@ -262,10 +251,10 @@ export default function SearchBar({ className }) {
             onChange={(e) => {
               setQuery(e.target.value);
               setShowDropdown(true);
-              setSelectedIndex(-1); // 🟢 Reset highlight when they type a new letter
+              setSelectedIndex(-1);
             }}
             onFocus={() => setShowDropdown(true)}
-            onKeyDown={handleKeyDown} // 🟢 Attach the keyboard listener here
+            onKeyDown={handleKeyDown}
             autoComplete="off"
           />
           <button type="submit" className="h-full px-6 bg-gradient-to-r from-insight-blue to-insight-purple text-white font-semibold text-sm hover:opacity-90 transition-opacity">
@@ -278,14 +267,12 @@ export default function SearchBar({ className }) {
         <div className="absolute z-[999] top-full mt-2 left-0 w-full bg-[#1a1a2e] border border-gray-700 rounded-xl overflow-hidden shadow-2xl">
           <ul className="max-h-64 overflow-y-auto w-full">
             {filteredOptions.map((opt, idx) => (
-              <li 
+              <li
                 key={idx}
-                // 🟢 NEW: Dynamically apply a lighter background if this row is selectedIndex
-                className={`px-4 py-3 cursor-pointer flex items-center justify-between border-b border-gray-800/50 last:border-none transition-colors ${
-                  selectedIndex === idx ? 'bg-gray-700' : 'hover:bg-gray-800'
-                }`}
+                className={`px-4 py-3 cursor-pointer flex items-center justify-between border-b border-gray-800/50 last:border-none transition-colors ${selectedIndex === idx ? 'bg-gray-700' : 'hover:bg-gray-800'
+                  }`}
                 onClick={() => handleSelect(opt)}
-                onMouseEnter={() => setSelectedIndex(idx)} // 🟢 Syncs mouse hover with keyboard index
+                onMouseEnter={() => setSelectedIndex(idx)}
                 onMouseDown={(e) => e.preventDefault()}
               >
                 <span className="text-sm font-medium text-gray-200">{opt.label}</span>
