@@ -7,13 +7,19 @@ from pymongo import MongoClient, UpdateOne
 # ============================================================
 # 1. SETUP & CONFIGURATION
 # ============================================================
-load_dotenv()
+load_dotenv()   # ← Force reload
 
-# Get URI from .env, fallback to local only if .env is missing
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://127.0.0.1:27017/insightledger")
+# Debug: Show exactly which URI is being used
+MONGO_URI = os.getenv("MONGO_URI")
+print(f"🔍 DEBUG: Using MONGO_URI = {MONGO_URI}")
+
+if not MONGO_URI:
+    print("❌ MONGO_URI not found in .env file!")
+    print("   Make sure .env is in the project root and contains:")
+    print("   MONGO_URI=your_full_atlas_connection_string")
+    exit(1)
 
 # Connect to MongoDB Atlas
-# Added tlsAllowInvalidCertificates=True to prevent SSL handshake errors on some machines
 client = MongoClient(MONGO_URI, tlsAllowInvalidCertificates=True)
 db = client['insightledger']
 

@@ -19,3 +19,4 @@ data/
 *.log
 # Local Netlify folder
 .netlify
+myenv/

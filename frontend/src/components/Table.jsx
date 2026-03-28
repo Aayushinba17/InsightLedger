@@ -43,7 +43,7 @@ export default function Table({ data, className }) {
                 <td className="px-6 py-4 font-medium text-gray-100">{row.name}</td>
                 <td className="px-6 py-4">{row.year}</td>
                 <td className="px-6 py-4">
-                  <TagBadge label={row.status} />
+                  <TagBadge label={row.status} colorOverride={row.statusColor} />
                 </td>
                 {hasScore && (
                   <td className="px-6 py-4">{row.score !== null && row.score !== undefined ? Number(row.score).toFixed(4) : 'N/A'}</td>

@@ -74,7 +74,7 @@ export default function IndustryOverview() {
                 <XAxis dataKey="industry" stroke="#666" tick={{fill: '#888', fontSize: 11}} tickLine={false} axisLine={false} />
                 <YAxis stroke="#666" tick={{fill: '#888', fontSize: 11}} tickLine={false} axisLine={false} />
                 <Tooltip 
-                  cursor={{fill: '#2a2a3a'}}
+                  cursor={false}
                   content={<CustomTooltip />}
                 />
                 <Bar 
