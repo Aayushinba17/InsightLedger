@@ -6,6 +6,7 @@ const CompanyDashboard = lazy(() => import('./pages/CompanyDashboard'));
 const PeerComparison = lazy(() => import('./pages/PeerComparison'));
 const IndustryDashboard = lazy(() => import('./pages/IndustryDashboard'));
 const IndustryOverview = lazy(() => import('./pages/IndustryOverview'));
+const IndexDashboard = lazy(() => import('./pages/IndexDashboard'));
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
             <Route path="/company/:symbol/peers" element={<PeerComparison />} />
             <Route path="/industry/:industry" element={<IndustryDashboard />} />
             <Route path="/industries" element={<IndustryOverview />} />
+            <Route path="/index" element={<IndexDashboard />} />
           </Routes>
         </Suspense>
       </div>

@@ -83,10 +83,22 @@ export default function CompanyDashboard() {
 
   const symbolUpper = symbol.toUpperCase();
   const Scores = {
-    BQ: business_quality_signals?.BQ,
-    CY: cyclicality_signals?.CY,
-    RP: return_profile_signals?.RP,
-    BG: governance_signals?.BG
+    BQ: { 
+      val: business_quality_signals?.BQ, 
+      justification: business_quality_signals?.reasoning_points 
+    },
+    CY: { 
+      val: cyclicality_signals?.CY, 
+      justification: cyclicality_signals?.reasoning_points 
+    },
+    RP: { 
+      val: return_profile_signals?.RP, 
+      justification: return_profile_signals?.reasoning_points 
+    },
+    BG: { 
+      val: governance_signals?.BG, 
+      justification: governance_signals?.reasoning_points 
+    }
   };
 
   const Pros = pros_and_cons?.pros || [];
@@ -95,6 +107,19 @@ export default function CompanyDashboard() {
   const recentMetrics = quantitative_data?.Recent || {};
   const historical = quantitative_data?.Historical || {};
   const recentNews = quantitative_data?.Recent_News || quantitative_data?.recent_news || [];
+
+  // --- MENTOR UPDATES: Fundamental Score & Contradiction Check ---
+  
+  // 1. Extract the calculated scores from the backend (or fallback to manual average)
+  const fundamentalFinalScore = data.fundamental_score 
+    ? parseFloat(data.fundamental_score).toFixed(2) 
+    : (((Scores.BQ || 0) + (Scores.CY || 0) + (Scores.RP || 0) + (Scores.BG || 0)) / 4).toFixed(2);
+    
+  const zScore = data.z_score ? parseFloat(data.z_score).toFixed(4) : null;
+
+  // 2. Check for Market Contradiction (Mentor point: "-ve returns contradict")
+  const return1Y = historical['Return over 1year'];
+  const isContradicting = fundamentalFinalScore > 70 && return1Y < 0;
 
   const Chart_Data = [
     { date: '5Y', value: historical['Return over 5years'] ? historical['Return over 5years'] * 100 : 0 },
@@ -132,6 +157,35 @@ export default function CompanyDashboard() {
       <section>
         <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1">Core AI Evaluation</h2>
         <ScoreCard scores={Scores} />
+      </section>
+
+      {/* --- MENTOR UPDATES: Final Score & Contradiction Warning --- */}
+      <section className="flex flex-col md:flex-row gap-6 mb-8">
+        {/* Fundamental Final Score Box */}
+        <div className="bg-insight-blue/10 border border-insight-blue/30 p-6 rounded-2xl flex-1 flex flex-col items-center justify-center text-center shadow-lg">
+          <h3 className="text-insight-blue text-xs tracking-widest uppercase font-bold mb-2">Fundamental Final Score</h3>
+          <p className="text-5xl font-extrabold text-white">{fundamentalFinalScore}</p>
+          {zScore && (
+            <p className="text-sm text-gray-400 font-medium mt-3 bg-gray-900/50 px-3 py-1 rounded-full">
+              Global Z-Score: <span className="text-gray-200">{zScore}</span>
+            </p>
+          )}
+        </div>
+
+        {/* Contradiction Warning Box (Only shows if AI score is high but stock is crashing) */}
+        {isContradicting && (
+          <div className="bg-red-950/30 border border-red-900/50 p-6 rounded-2xl flex-1 flex flex-col justify-center relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 rounded-full blur-[40px]" />
+            <h3 className="text-red-400 font-bold flex items-center gap-2 mb-3 text-lg relative z-10">
+              <span className="text-2xl">⚠️</span> Market Contradiction
+            </h3>
+            <p className="text-sm text-gray-300 leading-relaxed relative z-10">
+              The AI Evaluation fundamentals are highly positive (<span className="text-white font-bold">{fundamentalFinalScore}</span>), 
+              but the 1-year market return is heavily negative (<span className="text-red-400 font-bold">{(return1Y * 100).toFixed(2)}%</span>). 
+              This suggests macroeconomic headwinds, poor market sentiment, or external risks are currently overriding the company's core business quality.
+            </p>
+          </div>
+        )}
       </section>
 
       {/* Chart Section */}

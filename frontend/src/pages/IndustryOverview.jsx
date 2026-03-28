@@ -15,8 +15,9 @@ const CustomTooltip = ({ active, payload, label }) => {
       <div className="bg-[#12121e] border border-gray-700 p-3 rounded-lg shadow-2xl">
         <p className="text-gray-100 font-bold mb-1">{(label || '').replace(/_/g, ' ')}</p>
         <p className="text-insight-purple font-semibold text-sm">
-          Overall Score: <span className="text-white ml-1">{payload[0].value}</span>
+          Z-Score: <span className="text-white ml-1">{payload[0].value.toFixed(2)}</span>
         </p>
+        <p className="text-gray-400 text-xs mt-1">Range: -3 (weak) to +3 (strong)</p>
       </div>
     );
   }
@@ -54,7 +55,7 @@ export default function IndustryOverview() {
 
       <header className="mb-8">
         <h1 className="text-3xl md:text-4xl font-bold text-gray-100 mb-2">Industry Overview</h1>
-        <p className="text-gray-400">Ranking and performance summary of all industries</p>
+        <p className="text-gray-400">Ranking and performance summary of all industries (Z-Score: -3 weak to +3 strong)</p>
       </header>
 
       {data.length > 0 && (

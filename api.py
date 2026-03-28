@@ -104,6 +104,54 @@ def get_all_companies():
     # Returns a simple list of strings like ["HDFCBANK", "INFY", "TCS"]
     return [company["symbol"] for company in companies if "symbol" in company]
 
+# File: api.py
+
+@app.get("/api/index-scores")
+def get_all_index_scores():
+    """Fetch global fundamental scores and Z-Scores."""
+    companies = list(db.companies.find(
+        {}, 
+        {
+            "_id": 0, 
+            "symbol": 1, 
+            "fundamental_score": 1, 
+            "z_score": 1,
+            "business_overview": 1,
+            "industry": 1
+        }
+    ))
+    return companies
+
+@app.get("/api/top-performers")
+def get_top_performers():
+    """Fetch the top 6 companies based on Global Z-Score."""
+    companies = list(db.companies.find(
+        {"z_score": {"$exists": True}}, 
+        {
+            "_id": 0, 
+            "symbol": 1, 
+            "z_score": 1,
+            "business_overview": 1,
+            "industry": 1
+        }
+    ).sort("z_score", -1).limit(6))
+    return companies
+
+@app.get("/api/industry/{industry_name}/companies")
+def get_industry_companies(industry_name: str):
+    """Fetch all companies belonging to a specific industry, ordered by fundamental score."""
+    companies = list(db.companies.find(
+        # Note: You might need to adjust "company_metadata.industry" depending on exactly where industry is stored in your DB
+        {"company_metadata.industry": industry_name}, 
+        {
+            "_id": 0, 
+            "symbol": 1, 
+            "fundamental_score": 1, 
+            "z_score": 1
+        }
+    ).sort("fundamental_score", -1)) # Sort descending so the best company is first
+    return companies
+
 # ==========================================
 # EXECUTE
 # ==========================================

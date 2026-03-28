@@ -1,5 +1,5 @@
 import json
-import math
+import numpy as np
 from pathlib import Path
 from collections import defaultdict
 import yfinance as yf
@@ -7,7 +7,6 @@ import yfinance as yf
 # ==========================================
 # CONFIGURATION & PATHS
 # ==========================================
-# Assuming this script is in the 'scraper' folder
 BASE_DIR = Path(__file__).resolve().parent.parent
 INSIGHTS_DIR = BASE_DIR / "data" / "qualitative_insights"
 PEER_EVAL_DIR = BASE_DIR / "data" / "peer_evaluations"
@@ -15,67 +14,8 @@ PEER_EVAL_DIR = BASE_DIR / "data" / "peer_evaluations"
 PEER_EVAL_DIR.mkdir(parents=True, exist_ok=True)
 
 # ==========================================
-# 1. HELPER FUNCTIONS: MATH & RANKING
+# HELPER FUNCTIONS
 # ==========================================
-def normalize_metric(peer_group_values, inverse=False):
-    """Applies Min-Max normalization across a peer group."""
-    valid_data = {sym: val for sym, val in peer_group_values.items() if val is not None}
-    
-    if not valid_data:
-        return {}
-        
-    min_val = min(valid_data.values())
-    max_val = max(valid_data.values())
-    
-    normalized = {}
-    for sym, val in valid_data.items():
-        if max_val == min_val:
-            normalized[sym] = 1.0  # If all values are identical, max score
-            continue
-            
-        if inverse:
-            normalized[sym] = (max_val - val) / (max_val - min_val)
-        else:
-            normalized[sym] = (val - min_val) / (max_val - min_val)
-            
-    return normalized
-
-def calculate_weighted_score(symbol, metrics_data, weights_config):
-    """Calculates the final score, dynamically re-weighting if a metric is missing."""
-    total_score = 0.0
-    active_weight = 0.0
-    
-    for metric_name, weight in weights_config.items():
-        val = metrics_data.get(metric_name, {}).get(symbol)
-        if val is not None:
-            total_score += val * weight
-            active_weight += weight
-            
-    if active_weight > 0:
-        return total_score / active_weight
-    return 0.0
-
-def apply_competition_ranking(scores_dict):
-    """Applies standard competition ranking (e.g., 1, 1, 3)."""
-    sorted_symbols = sorted(scores_dict.keys(), key=lambda k: scores_dict[k], reverse=True)
-    
-    rankings = []
-    
-    for i in range(len(sorted_symbols)):
-        sym = sorted_symbols[i]
-        score = scores_dict[sym]
-        
-        if i > 0 and math.isclose(score, scores_dict[sorted_symbols[i-1]], rel_tol=1e-5):
-            rankings.append({"company": sym, "score": round(score, 4), "rank": rankings[-1]["rank"]})
-        else:
-            rankings.append({"company": sym, "score": round(score, 4), "rank": i + 1})
-            
-    return rankings
-
-# ==========================================
-# 2. METRIC EXTRACTION
-# ==========================================
-
 def safe_float(val):
     """Safely converts any string/number to a float, returning None if it fails."""
     if val is None:
@@ -85,47 +25,18 @@ def safe_float(val):
     except (ValueError, TypeError):
         return None
 
-def extract_raw_metrics(company_json):
-    """
-    Extracts needed metrics matching quantitative_fetcher.py AND schema_individual.json perfectly.
-    """
-    recent_quant = company_json.get("quantitative_data", {}).get("Recent", {})
-    
-    return {
-        # Normal Quantitative (Safely cast to float)
-        "roe": safe_float(recent_quant.get("Return on equity")),
-        "roce": safe_float(recent_quant.get("Return on capital employed")),
-        "sales_growth": safe_float(recent_quant.get("Sales growth")),
-        "profit_growth": safe_float(recent_quant.get("Profit growth")),
-        "earnings_yield": safe_float(recent_quant.get("Earnings yield")),
-        "dividend_yield": safe_float(recent_quant.get("Dividend yield")),
-        "current_ratio": safe_float(recent_quant.get("Current ratio")),
-        "interest_coverage": safe_float(recent_quant.get("Interest Coverage Ratio")),
-        
-        # Inverse Quantitative
-        "debt_to_equity": safe_float(recent_quant.get("Debt to equity")),
-        "pe": safe_float(recent_quant.get("Price to Earning")),
-        "pb": safe_float(recent_quant.get("Price to book value")),
-        "peg": safe_float(recent_quant.get("PEG Ratio")),
-        
-        # Qualitative Scores (Safely cast AI output to float)
-        "bq": safe_float(company_json.get("business_quality_signals", {}).get("BQ")), 
-        "bg": safe_float(company_json.get("governance_signals", {}).get("BG")),
-        "rp": safe_float(company_json.get("return_profile_signals", {}).get("RP")),
-        "cy": safe_float(company_json.get("cyclicality_signals", {}).get("CY"))
-    }
-
 # ==========================================
-# 3. MAIN EVALUATION ENGINE
+# MAIN EVALUATION ENGINE
 # ==========================================
-def run_scripted_peer_evaluation():
+def run_global_standardized_peer_evaluation():
     print("\n" + "=" * 60)
-    print("PHASE 2: Python Math Engine - Sector Peer Evaluation")
+    print("PHASE 2: Standardized Global Z-Score Peer Evaluation")
     print("=" * 60)
     
     all_companies = {}
+    global_scores = []
     
-    # 1. Load all JSONs from Insights directory
+    # 1. Load all JSONs, extract AI scores, and calculate RAW fundamental score
     for company_folder in INSIGHTS_DIR.iterdir():
         if company_folder.is_dir():
             sym = company_folder.name
@@ -133,7 +44,23 @@ def run_scripted_peer_evaluation():
             if json_path.exists():
                 try:
                     with open(json_path, 'r', encoding='utf-8') as f:
-                        all_companies[sym] = json.load(f)
+                        data = json.load(f)
+                    
+                    # Extract Qualitative Scores
+                    bq = safe_float(data.get("business_quality_signals", {}).get("BQ")) or 0
+                    bg = safe_float(data.get("governance_signals", {}).get("BG")) or 0
+                    rp = safe_float(data.get("return_profile_signals", {}).get("RP")) or 0
+                    cy = safe_float(data.get("cyclicality_signals", {}).get("CY")) or 0
+                    
+                    # Mentor Request: Avg score across LLM scores
+                    avg_score = (bq + bg + rp + cy) / 4.0
+                    data["fundamental_score"] = avg_score
+                    
+                    global_scores.append(avg_score)
+                    
+                    # Store both the data and the path so we can overwrite it later
+                    all_companies[sym] = {"data": data, "path": json_path}
+                    
                 except Exception as e:
                     print(f" ❌ Failed to load {sym}: {e}")
 
@@ -141,10 +68,33 @@ def run_scripted_peer_evaluation():
         print(" ⚠ No companies found to evaluate. Exiting Phase 2.")
         return False
 
-    # 2. Dynamically group by sector
-    print(f" 📊 Grouping {len(all_companies)} companies by industry...")
+    # 2. Calculate Global Mean and Standard Deviation (Whole Index Math)
+    index_mean = np.mean(global_scores)
+    index_std = np.std(global_scores)
+    
+    if index_std == 0:
+        index_std = 1.0  # Prevent division by zero if all scores are magically identical
+
+    print(f" 🌍 Global Index Calculated: Mean={index_mean:.2f}, StdDev={index_std:.2f}")
+
+    # 3. Apply Z-Scores, Save back to Individual JSONs, and Group by Sector
+    print(f" 📊 Applying Z-Scores and Grouping {len(all_companies)} companies by industry...")
     sector_map = defaultdict(list)
-    for sym in all_companies.keys():
+    
+    for sym, info in all_companies.items():
+        data = info["data"]
+        json_path = info["path"]
+        
+        # Calculate Z-Score: (Company Score - Average Index Score) / Standard Deviation
+        z_score = (data["fundamental_score"] - index_mean) / index_std
+        data["z_score"] = float(z_score)
+        
+        # VERY IMPORTANT: Save the math back to the individual JSON file! 
+        # This guarantees your db_uploader.py will push it to MongoDB for the Whole Index page.
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        
+        # Group by industry via yfinance
         try:
             ticker = yf.Ticker(f"{sym}.NS")
             sector = ticker.info.get("industry", "Unclassified").replace(" ", "_").replace("/", "_")
@@ -152,77 +102,29 @@ def run_scripted_peer_evaluation():
         except:
             sector_map["Unclassified"].append(sym)
 
-    # 3. Process each sector
+    # 4. Generate the Sector-Specific JSON files (Leaderboards)
     for industry, symbols in sector_map.items():
-        if len(symbols) < 2:
-            print(f" ⏭ Skipping {industry.replace('_', ' ')}: Need at least 2 companies for peer comparison.")
-            continue
-            
-        print(f"\n ⚙ Analyzing Sector: {industry.replace('_', ' ')} ({len(symbols)} companies)")
+        # Sort companies in this sector globally by their Z-Score (highest to lowest)
+        symbols.sort(key=lambda s: all_companies[s]["data"]["z_score"], reverse=True)
         
-        raw_data = {sym: extract_raw_metrics(all_companies[sym]) for sym in symbols}
-        
-        metrics = defaultdict(dict)
-        for sym, data in raw_data.items():
-            for k, v in data.items():
-                metrics[k][sym] = v
-
-        # Normalize metrics & scale qualitative scores down to 0-1
-        norm_metrics = {
-            "roe": normalize_metric(metrics["roe"]),
-            "roce": normalize_metric(metrics["roce"]),
-            "sales_growth": normalize_metric(metrics["sales_growth"]),
-            "profit_growth": normalize_metric(metrics["profit_growth"]),
-            "earnings_yield": normalize_metric(metrics["earnings_yield"]),
-            "dividend_yield": normalize_metric(metrics["dividend_yield"]),
-            "current_ratio": normalize_metric(metrics["current_ratio"]),
-            "interest_coverage": normalize_metric(metrics["interest_coverage"]),
-            
-            "debt_to_equity": normalize_metric(metrics["debt_to_equity"], inverse=True),
-            "pe": normalize_metric(metrics["pe"], inverse=True),
-            "pb": normalize_metric(metrics["pb"], inverse=True),
-            "peg": normalize_metric(metrics["peg"], inverse=True),
-            
-            "qual_bq": {s: (v / 100) if v is not None else None for s, v in metrics["bq"].items()},
-            "qual_bg": {s: (v / 100) if v is not None else None for s, v in metrics["bg"].items()},
-            "qual_rp": {s: (v / 100) if v is not None else None for s, v in metrics["rp"].items()},
-            "qual_cy": {s: (v / 100) if v is not None else None for s, v in metrics["cy"].items()},
-            "qual_bq_bg_avg": {s: ((metrics["bq"].get(s, 0) + metrics["bg"].get(s, 0)) / 200) if metrics["bq"].get(s) and metrics["bg"].get(s) else None for s in symbols}
-        }
-
-        # Calculate formulas
-        fundamental_scores = {}
-        value_scores = {}
-        growth_scores = {}
-        safety_scores = {}
-        
-        for sym in symbols:
-            fundamental_scores[sym] = calculate_weighted_score(sym, norm_metrics, {
-                "roe": 0.30, "roce": 0.20, "sales_growth": 0.15, 
-                "profit_growth": 0.10, "debt_to_equity": 0.10, "qual_bq_bg_avg": 0.15
-            })
-            value_scores[sym] = calculate_weighted_score(sym, norm_metrics, {
-                "pe": 0.35, "pb": 0.25, "earnings_yield": 0.15, 
-                "dividend_yield": 0.10, "qual_bq": 0.15
-            })
-            growth_scores[sym] = calculate_weighted_score(sym, norm_metrics, {
-                "sales_growth": 0.35, "profit_growth": 0.25, "qual_rp": 0.15, 
-                "roe": 0.15, "peg": 0.10
-            })
-            safety_scores[sym] = calculate_weighted_score(sym, norm_metrics, {
-                "debt_to_equity": 0.25, "current_ratio": 0.20, "interest_coverage": 0.20, 
-                "qual_cy": 0.15, "qual_bg": 0.20
+        rankings = []
+        for i, sym in enumerate(symbols):
+            company_data = all_companies[sym]["data"]
+            rankings.append({
+                "company": sym,
+                "score": round(company_data["fundamental_score"], 2),
+                "z_score": round(company_data["z_score"], 4),
+                "rank": i + 1
             })
 
-        # Save to disk
+        # Generate simplified payload strictly for Fundamental Investors as requested
         output_payload = {
             "industry": industry,
             "companies_count": len(symbols),
+            "best_performing_company": symbols[0] if symbols else None,
+            "best_company_justification": "Top ranked company in sector based on global Z-score evaluation.",
             "rankings": {
-                "fundamental_investor": apply_competition_ranking(fundamental_scores),
-                "value_investor": apply_competition_ranking(value_scores),
-                "growth_investor": apply_competition_ranking(growth_scores),
-                "safety_investor": apply_competition_ranking(safety_scores)
+                "fundamental_investor": rankings
             }
         }
 
@@ -230,9 +132,9 @@ def run_scripted_peer_evaluation():
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(output_payload, f, indent=2)
             
-        print(f"   ✓ Saved leaderboard → {output_file.name}")
+        print(f"   ✓ Saved standardized leaderboard → {output_file.name}")
         
     return True
 
 if __name__ == "__main__":
-    run_scripted_peer_evaluation()
+    run_global_standardized_peer_evaluation()

@@ -2,7 +2,7 @@
 Industry Evaluator — Pure Python Math Engine
 
 Aggregates company-level individual JSONs by industry (via yfinance)
-and produces industry-level evaluation dashboards covering:
+and produces industry-level evaluation dashboards using Z-Score standardization covering:
   1. Composite AI Scores (BQ, CY, RP, BG averages)
   2. Revenue Health (total revenue, avg OPM, avg ROE, avg ROCE)
   3. Cumulative Quarterly Growth (avg YOY quarterly sales & profit growth)
@@ -14,6 +14,7 @@ Output: Per-industry JSON files + a master _industry_summary.json with cross-ind
 
 import json
 import math
+import statistics
 from pathlib import Path
 from collections import defaultdict
 
@@ -28,6 +29,7 @@ INSIGHTS_DIR = BASE_DIR / "data" / "qualitative_insights"
 QUANT_DIR = BASE_DIR / "data" / "quantitative"
 INDUSTRY_EVAL_DIR = BASE_DIR / "data" / "industry_evaluations"
 INDUSTRY_EVAL_DIR.mkdir(parents=True, exist_ok=True)
+
 
 # ============================================================
 # HELPERS
@@ -56,50 +58,42 @@ def sum_of(values):
     return sum(valid) if valid else None
 
 
-def normalize_across(industry_scores):
+def zscore_across(industry_scores, inverse=False):
     """
-    Min-Max normalize a dict {industry: score} across all industries.
-    Returns {industry: normalized_score (0-1)}.
+    Standardize a dict {industry: score} across all industries using Z-scores.
+    If inverse=True, multiplies the Z-score by -1 (so lower raw numbers = higher Z-scores).
+    Caps scores at -3 and 3 to prevent extreme outliers from breaking averages.
     """
-    valid = {k: v for k, v in industry_scores.items() if v is not None}
-
-    if not valid:
-        return {k: None for k in industry_scores}
-
-    min_v = min(valid.values())
-    max_v = max(valid.values())
-
+    valid_scores = [v for v in industry_scores.values() if v is not None]
+    
+    # If not enough data for a standard deviation, default everyone to average (0.0)
+    if len(valid_scores) < 2:
+        return {k: (0.0 if v is not None else None) for k, v in industry_scores.items()}
+        
+    mean_val = statistics.mean(valid_scores)
+    stdev_val = statistics.stdev(valid_scores)
+    
+    # If all values are identical, stdev is 0. Everyone is average.
+    if stdev_val == 0:
+        return {k: (0.0 if v is not None else None) for k, v in industry_scores.items()}
+        
     result = {}
     for k, v in industry_scores.items():
         if v is None:
             result[k] = None
-        elif max_v == min_v:
-            result[k] = 1.0
         else:
-            result[k] = (v - min_v) / (max_v - min_v)
-    return result
-
-
-def normalize_across_inverse(industry_scores):
-    """
-    Min-Max normalize inversely (lower is better, e.g. debt-to-equity).
-    """
-    valid = {k: v for k, v in industry_scores.items() if v is not None}
-
-    if not valid:
-        return {k: None for k in industry_scores}
-
-    min_v = min(valid.values())
-    max_v = max(valid.values())
-
-    result = {}
-    for k, v in industry_scores.items():
-        if v is None:
-            result[k] = None
-        elif max_v == min_v:
-            result[k] = 1.0
-        else:
-            result[k] = (max_v - v) / (max_v - min_v)
+            # 1. Calculate base Z-score
+            z = (v - mean_val) / stdev_val
+            
+            # 2. Cap at -3 / 3
+            z = max(-3.0, min(3.0, z))
+            
+            # 3. Invert if lower is better (e.g., debt, red flags)
+            if inverse:
+                z = z * -1
+                
+            result[k] = z
+            
     return result
 
 
@@ -265,24 +259,18 @@ def aggregate_industry(symbols, all_companies):
 
 def compute_dimension_scores(industry_data_map):
     """
-    For each of 5 dimensions, compute a 0-1 normalized score across all industries.
+    For each of 5 dimensions, compute Z-SCORES (standard deviations from the mean)
+    across all industries. Higher z-score = better than the average industry.
+    
     Then compute an overall weighted industry score and rank.
-
-    Dimension weights:
-      - Composite Score:       25%
-      - Revenue Health:        20%
-      - Quarterly Growth:      20%
-      - Stockholder Activity:  15%
-      - Investment Safety:     20%
     """
     industries = list(industry_data_map.keys())
-
-    # --- Raw dimension scores ---
-
+    
+    # --- Raw dimension scores --- 
     # 1. Composite: higher is better
     raw_composite = {ind: d["composite_scores"]["industry_composite"] for ind, d in industry_data_map.items()}
-
-    # 2. Revenue Health: weighted combo of avg_opm, avg_roe, avg_roce  (higher = better)
+    
+    # 2. Revenue Health: weighted combo of avg_opm, avg_roe, avg_roce (higher = better)
     raw_rev_health = {}
     for ind, d in industry_data_map.items():
         rh = d["revenue_health"]
@@ -293,15 +281,15 @@ def compute_dimension_scores(industry_data_map):
                 parts.append(val * w)
                 weights.append(w)
         raw_rev_health[ind] = sum(parts) / sum(weights) if weights else None
-
-    # 3. Quarterly Growth: average of sales & profit growth  (higher = better)
+    
+    # 3. Quarterly Growth: average of sales & profit growth (higher = better)
     raw_qtr_growth = {}
     for ind, d in industry_data_map.items():
         qg = d["quarterly_growth"]
         parts = [v for v in [qg["avg_yoy_sales_growth"], qg["avg_yoy_profit_growth"]] if v is not None]
         raw_qtr_growth[ind] = sum(parts) / len(parts) if parts else None
-
-    # 4. Stockholder Activity: weighted combo  (higher holding & yield = better)
+    
+    # 4. Stockholder Activity: weighted combo (higher holding & yield = better)
     raw_stockholder = {}
     for ind, d in industry_data_map.items():
         sa = d["stockholder_activity"]
@@ -321,36 +309,14 @@ def compute_dimension_scores(industry_data_map):
             parts.append(((clamped + 10) / 20) * 0.3)  # map -10..10 → 0..1
             weights.append(0.3)
         raw_stockholder[ind] = sum(parts) / sum(weights) if weights else None
-
-    # 5. Investment Safety: inverse debt_to_equity + current_ratio + interest coverage
-    #    (lower debt = better, higher current & coverage = better)
-    #    Combine the normalized values afterward
-    raw_safety = {}
-    for ind, d in industry_data_map.items():
-        isf = d["investment_safety"]
-        parts = []
-        weights = []
-        # Debt-to-equity: lower is better — will invert during normalization
-        if isf["avg_debt_to_equity"] is not None:
-            parts.append(("inv_dte", isf["avg_debt_to_equity"], 0.30))
-        if isf["avg_current_ratio"] is not None:
-            parts.append(("norm", isf["avg_current_ratio"], 0.25))
-        if isf["avg_interest_coverage"] is not None:
-            parts.append(("norm", isf["avg_interest_coverage"], 0.25))
-        # Low red flag count is better
-        flag_val = isf["governance_red_flag_count"]
-        parts.append(("inv_flag", flag_val, 0.20))
-
-        raw_safety[ind] = parts if parts else None
-
-    # --- Normalize each dimension across industries ---
-    norm_composite = normalize_across(raw_composite)
-    norm_rev_health = normalize_across(raw_rev_health)
-    norm_qtr_growth = normalize_across(raw_qtr_growth)
-    norm_stockholder = normalize_across(raw_stockholder)
-
-    # Safety is special — multi-metric, some inverse
-    # Compute each sub-metric's raw values, normalize, then combine
+    
+    # --- Z-SCORE NORMALIZATION ---
+    norm_composite   = zscore_across(raw_composite)            # higher better
+    norm_rev_health  = zscore_across(raw_rev_health)
+    norm_qtr_growth  = zscore_across(raw_qtr_growth)
+    norm_stockholder = zscore_across(raw_stockholder)
+    
+    # Safety sub-metrics (some inverse)
     dte_raw = {}
     cr_raw = {}
     ic_raw = {}
@@ -361,12 +327,12 @@ def compute_dimension_scores(industry_data_map):
         cr_raw[ind] = isf["avg_current_ratio"]
         ic_raw[ind] = isf["avg_interest_coverage"]
         flag_raw[ind] = isf["governance_red_flag_count"]
-
-    norm_dte = normalize_across_inverse(dte_raw)     # lower is better
-    norm_cr = normalize_across(cr_raw)                # higher is better
-    norm_ic = normalize_across(ic_raw)                # higher is better
-    norm_flag = normalize_across_inverse(flag_raw)    # lower is better
-
+    
+    norm_dte  = zscore_across(dte_raw,  inverse=True)   # lower debt → better
+    norm_cr   = zscore_across(cr_raw)                   # higher better
+    norm_ic   = zscore_across(ic_raw)                   # higher better
+    norm_flag = zscore_across(flag_raw, inverse=True)   # lower flags → better
+    
     norm_safety = {}
     for ind in industries:
         parts = []
@@ -377,8 +343,8 @@ def compute_dimension_scores(industry_data_map):
                 parts.append(val * w)
                 weights.append(w)
         norm_safety[ind] = sum(parts) / sum(weights) if weights else None
-
-    # --- Weighted overall score ---
+    
+    # --- Weighted overall score (Average of Z-Scores) ---
     dimension_weights = {
         "composite": 0.25,
         "revenue_health": 0.20,
@@ -386,8 +352,9 @@ def compute_dimension_scores(industry_data_map):
         "stockholder_activity": 0.15,
         "investment_safety": 0.20,
     }
-
-    overall_scores = {}
+    
+    # 1. Calculate the weighted average of the normalized Z-SCORES
+    squashed_z_scores = {}
     for ind in industries:
         parts = []
         active_w = []
@@ -399,37 +366,43 @@ def compute_dimension_scores(industry_data_map):
                 "stockholder_activity": norm_stockholder,
                 "investment_safety": norm_safety,
             }[dim_key].get(ind)
+            
             if val is not None:
                 parts.append(val * w)
                 active_w.append(w)
-        overall_scores[ind] = sum(parts) / sum(active_w) if active_w else 0.0
-
-    # --- Ranking ---
-    sorted_industries = sorted(overall_scores.keys(), key=lambda k: overall_scores[k], reverse=True)
+                
+        # This average will be "squashed" (e.g., ranging from -1.5 to 1.5 instead of -3 to 3)
+        squashed_z_scores[ind] = sum(parts) / sum(active_w) if active_w else 0.0
+    
+    # 2. Re-standardize the squashed averages into true final Z-scores
+    overall_scores_zscore = zscore_across(squashed_z_scores)
+    
+    # --- Ranking (by final z-scored overall) ---
+    sorted_industries = sorted(overall_scores_zscore.items(), key=lambda x: x[1] if x[1] is not None else float('-inf'), reverse=True)
+    
     rankings = {}
     prev_score = None
     prev_rank = 0
-    for i, ind in enumerate(sorted_industries):
-        score = overall_scores[ind]
-        if prev_score is not None and math.isclose(score, prev_score, rel_tol=1e-5):
+    for i, (ind, score) in enumerate(sorted_industries):
+        if prev_score is not None and math.isclose(score if score is not None else 0, prev_score, rel_tol=1e-5):
             rankings[ind] = prev_rank
         else:
             rankings[ind] = i + 1
-        prev_score = score
+        prev_score = score if score is not None else 0
         prev_rank = rankings[ind]
-
+    
     return {
         "normalized_dimensions": {
             ind: {
-                "composite": round(norm_composite.get(ind, 0) or 0, 4),
-                "revenue_health": round(norm_rev_health.get(ind, 0) or 0, 4),
-                "quarterly_growth": round(norm_qtr_growth.get(ind, 0) or 0, 4),
-                "stockholder_activity": round(norm_stockholder.get(ind, 0) or 0, 4),
-                "investment_safety": round(norm_safety.get(ind, 0) or 0, 4),
+                "composite": round(norm_composite.get(ind) or 0, 4),
+                "revenue_health": round(norm_rev_health.get(ind) or 0, 4),
+                "quarterly_growth": round(norm_qtr_growth.get(ind) or 0, 4),
+                "stockholder_activity": round(norm_stockholder.get(ind) or 0, 4),
+                "investment_safety": round(norm_safety.get(ind) or 0, 4),
             }
             for ind in industries
         },
-        "overall_scores": {ind: round(overall_scores[ind], 4) for ind in industries},
+        "overall_scores": {ind: round(overall_scores_zscore.get(ind) or 0, 4) for ind in industries},
         "rankings": rankings,
     }
 
@@ -441,7 +414,7 @@ def compute_dimension_scores(industry_data_map):
 def run_industry_evaluation():
     """
     Main function: load all company JSONs, group by industry,
-    compute per-industry aggregates, normalize across industries, rank, and save.
+    compute per-industry aggregates, standardize across industries with Z-scores, rank, and save.
     """
     print("\n" + "=" * 60)
     print("INDUSTRY EVALUATION: Aggregating Companies by Industry")
@@ -520,8 +493,8 @@ def run_industry_evaluation():
         print("  ⚠ No industries with valid data. Exiting.")
         return False
 
-    # 4. Cross-industry normalization & ranking
-    print("\n  📈 Normalizing and ranking across industries...")
+    # 4. Cross-industry standardization & ranking
+    print("\n  📈 Standardizing (Z-score) and ranking across industries...")
     scoring = compute_dimension_scores(industry_data)
 
     # Attach normalized scores and rank to each industry's data
@@ -561,7 +534,7 @@ def run_industry_evaluation():
     print(f"\n  🏆 Industry Rankings:")
     for entry in summary_entries:
         print(f"     #{entry['rank']:>2}  {entry['industry'].replace('_', ' '):<40}  "
-              f"Score: {entry['overall_score']:.4f}  ({entry['company_count']} companies)")
+              f"Z-Score: {entry['overall_score']:.4f}  ({entry['company_count']} companies)")
 
     print(f"\n  ✅ Saved {len(industry_data)} industry evaluations + master summary.")
     print(f"     → {INDUSTRY_EVAL_DIR}")

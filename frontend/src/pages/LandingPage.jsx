@@ -1,37 +1,47 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import SearchBar from '../components/SearchBar';
-import { fetchIndustrySummary } from '../utils/dataFetcher';
+import { fetchIndustrySummary, fetchTopPerformers } from '../utils/dataFetcher';
+import { Globe, LayoutGrid, Building2 } from 'lucide-react';
 
 export default function LandingPage() {
   const [topIndustries, setTopIndustries] = useState([]);
+  const [topCompanies, setTopCompanies] = useState([]);
 
   useEffect(() => {
+    // Fetch Top Industries
     fetchIndustrySummary()
       .then(res => {
         const arr = res.rankings || [];
-        // Sort by rank ascending
         arr.sort((a, b) => (a.rank || 0) - (b.rank || 0));
         setTopIndustries(arr.slice(0, 5));
       })
       .catch(console.error);
-  }, []);
 
-  const topCompanies = [
-    { name: 'TCS', ticker: 'TCS', industry: 'Information Technology' },
-    { name: 'Infosys', ticker: 'INFY', industry: 'Information Technology' },
-    { name: 'HDFC Bank', ticker: 'HDFCBANK', industry: 'Banking' },
-    { name: 'Reliance', ticker: 'RELIANCE', industry: 'Oil & Gas' },
-    { name: 'ITC Ltd', ticker: 'ITC', industry: 'Tobacco' },
-    { name: 'Larsen & Toubro', ticker: 'LT', industry: 'Engineering' }
-  ];
+    // Fetch Top Companies dynamically
+    fetchTopPerformers()
+      .then(data => {
+        if (!data || !Array.isArray(data)) {
+          console.warn("Top performers API returned invalid data:", data);
+          return;
+        }
+        const formatted = data.map(c => ({
+          ticker: c.symbol,
+          industry: (c.industry || c.business_overview?.industry_position || 'N/A').replace(/_/g, ' ')
+        }));
+        setTopCompanies(formatted);
+      })
+      .catch(err => console.error("Failed to fetch top performers:", err));
+  }, []); // useEffect ends here correctly
 
+  // Move this function outside of useEffect so the button can see it
   const handleFocusSearch = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    const input = document.getElementById('search');
+    const input = document.getElementById('search'); // Ensure SearchBar component has id="search"
     if (input) input.focus();
   };
 
+  // The component return must be out here
   return (
     <div className="min-h-screen flex flex-col items-center pt-24 pb-16 px-4 md:px-8 relative overflow-x-hidden fade-in">
       {/* Background radial gradients */}
@@ -48,41 +58,66 @@ export default function LandingPage() {
         <p className="text-gray-400 text-lg md:text-xl mb-10 font-medium tracking-wide">
           Relative Stock Intelligence Platform
         </p>
-        
+
         <div className="relative z-50 flex justify-center w-full transform transition-transform duration-300 hover:scale-[1.02]">
-          {/* We rely on the SearchBar internally handling its own glow on focus via focus-within */}
           <SearchBar className="shadow-xl" />
         </div>
       </div>
 
       {/* 2. Explore Analysis Section */}
-      <section className="z-10 max-w-5xl w-full mb-20">
+      <section className="z-10 max-w-6xl w-full mb-20">
         <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-6 text-center">Explore Analysis</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+
           {/* Company Analysis Card */}
           <div className="group rounded-2xl p-[1px] bg-gradient-to-br from-gray-800 to-gray-900 hover:from-insight-blue/50 hover:to-indigo-500/50 transition-all duration-300 hover:scale-[1.02] shadow-lg">
             <div className="bg-[#12121c] p-6 rounded-2xl h-full flex flex-col justify-between">
               <div>
-                <h3 className="text-xl font-bold text-gray-100 mb-2 group-hover:text-insight-blue transition-colors">Company Analysis</h3>
-                <p className="text-gray-400 text-sm mb-6 leading-relaxed">Search and analyze individual companies, extracting relative metrics and qualitative deep dives.</p>
+                <div className="flex items-center gap-2 mb-2">
+                  <Building2 size={18} className="text-insight-blue" />
+                  <h3 className="text-xl font-bold text-gray-100 group-hover:text-insight-blue transition-colors">Company</h3>
+                </div>
+                <p className="text-gray-400 text-sm mb-6 leading-relaxed">Search individual companies for qualitative deep dives and relative metrics.</p>
               </div>
-              <button 
-                onClick={handleFocusSearch} 
+              <button
+                onClick={handleFocusSearch}
                 className="self-start px-5 py-2.5 rounded-full bg-insight-blue/10 text-insight-blue text-sm font-semibold border border-insight-blue/30 hover:bg-insight-blue hover:text-white transition-all shadow-sm"
               >
-                Go to Company Search
+                Go to Search
               </button>
             </div>
           </div>
 
-          {/* Industry Analysis Card */}
-          <div className="group rounded-2xl p-[1px] bg-gradient-to-br from-gray-800 to-gray-900 hover:from-indigo-500/50 hover:to-insight-purple/50 transition-all duration-300 hover:scale-[1.02] shadow-lg">
+          {/* Whole Index Leaderboard Card */}
+          <div className="group rounded-2xl p-[1px] bg-gradient-to-br from-gray-800 to-gray-900 hover:from-emerald-500/50 hover:to-insight-blue/50 transition-all duration-300 hover:scale-[1.02] shadow-lg">
             <div className="bg-[#12121c] p-6 rounded-2xl h-full flex flex-col justify-between">
               <div>
-                <h3 className="text-xl font-bold text-gray-100 mb-2 group-hover:text-insight-purple transition-colors">Industry Analysis</h3>
+                <div className="flex items-center gap-2 mb-2">
+                  <Globe size={18} className="text-emerald-400" />
+                  <h3 className="text-xl font-bold text-gray-100 group-hover:text-emerald-400 transition-colors">Index Leaderboard</h3>
+                </div>
+                <p className="text-gray-400 text-sm mb-6 leading-relaxed">View global rankings across all companies using standardized Z-Scores to find top performers.</p>
+              </div>
+              <Link
+                to="/index"
+                className="self-start px-5 py-2.5 rounded-full bg-emerald-500/10 text-emerald-400 text-sm font-semibold border border-emerald-500/30 hover:bg-emerald-500 hover:text-white transition-all shadow-sm"
+              >
+                View Global Index
+              </Link>
+            </div>
+          </div>
+
+          {/* Industry Analysis Card */}
+          <div className="group rounded-2xl p-[1px] bg-gradient-to-br from-gray-800 to-gray-900 hover:from-insight-purple/50 hover:to-indigo-500/50 transition-all duration-300 hover:scale-[1.02] shadow-lg">
+            <div className="bg-[#12121c] p-6 rounded-2xl h-full flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <LayoutGrid size={18} className="text-insight-purple" />
+                  <h3 className="text-xl font-bold text-gray-100 group-hover:text-insight-purple transition-colors">Industries</h3>
+                </div>
                 <p className="text-gray-400 text-sm mb-6 leading-relaxed">Explore industry-wide performance, aggregate scoring, and sector rankings at a glance.</p>
               </div>
-              <Link 
+              <Link
                 to="/industries"
                 className="self-start px-5 py-2.5 rounded-full bg-insight-purple/10 text-insight-purple text-sm font-semibold border border-insight-purple/30 hover:bg-insight-purple hover:text-white transition-all shadow-sm"
               >
@@ -96,7 +131,7 @@ export default function LandingPage() {
       {/* 3. Quick Access Section */}
       <section className="z-10 max-w-5xl w-full">
         <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-8 text-center mt-4">Quick Access</h2>
-        
+
         {/* Top Companies */}
         <div className="mb-12">
           <div className="flex items-center justify-between mb-4 px-2">
@@ -145,7 +180,6 @@ export default function LandingPage() {
           </div>
         )}
       </section>
-
     </div>
   );
 }
