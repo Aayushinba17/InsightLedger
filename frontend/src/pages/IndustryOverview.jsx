@@ -135,7 +135,7 @@ export default function IndustryOverview() {
             key={idx} 
             to={`/industry/${encodeURIComponent(ind.industry)}`}
             className="group block p-6 bg-gradient-to-br from-insight-card to-insight-dark border border-insight-border rounded-2xl hover:border-insight-blue transition-all">
-          >
+          
            <div className="flex justify-between items-start mb-4 gap-4">
           <h3 className="text-xl font-bold text-gray-100 group-hover:text-insight-blue transition-colors">
             {ind.industry.replace(/_/g, ' ')}
