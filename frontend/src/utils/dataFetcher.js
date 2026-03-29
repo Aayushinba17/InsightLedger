@@ -38,3 +38,19 @@ export async function fetchTopPerformers() {
   if (!res.ok) throw new Error('Failed to fetch top performers');
   return res.json();
 }
+
+/**
+ * Fetches top 3 live news articles for a given symbol from Yahoo Finance via the backend.
+ * Returns an array of { title, link, publisher, published_at } objects.
+ * Returns [] on any failure — caller should handle empty gracefully.
+ */
+export async function fetchLiveNews(symbol) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/news/${symbol.toUpperCase()}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.news || [];
+  } catch {
+    return [];
+  }
+}

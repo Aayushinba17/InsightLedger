@@ -1,77 +1,105 @@
+// // /**
+// //  * CompanyDashboard.jsx
+// //  *
+// //  * Fixes applied:
+// //  * 1. ScoreCard section is rendered inline here — import kept but used correctly.
+// //  *    (Previously ScoreCard.jsx contained a copy of CompanyDashboard, causing an
+// //  *    import cycle / infinite render loop. That file is now a proper component.)
+// //  * 2. newsLoading never gets stuck: the useEffect has no missing dependencies
+// //  *    and fetchLiveNews always resolves (returns [] on failure) — no infinite re-render.
+// //  * 3. symbolUpper is derived outside state/effects to avoid stale-closure issues.
+// //  */
+
 // import React, { useEffect, useState } from 'react';
 // import { useParams, Link } from 'react-router-dom';
-// import { fetchQualitativeAnalysis, fetchAllSectors } from '../utils/dataFetcher';
+// import { fetchQualitativeAnalysis, fetchAllSectors, fetchLiveNews } from '../utils/dataFetcher';
 // import TagBadge from '../components/TagBadge';
-// import ScoreCard from '../components/ScoreCard';
+// import ScoreCard from '../components/ScoreCard';   // ← now the real ScoreCard component
 // import MetricCard from '../components/MetricCard';
 // import ChartCard from '../components/ChartCard';
-// import { ArrowLeft, Users, ArrowUpRight } from 'lucide-react';
+// import { ArrowLeft, Users, ArrowUpRight, Newspaper } from 'lucide-react';
 // import { getInvestmentTag } from '../utils/getInvestmentTag';
+// import { generateContradiction } from '../utils/contradictionEngine';
 
 // export default function CompanyDashboard() {
 //   const { symbol } = useParams();
-//   const [data, setData] = useState(null);
-//   const [badgeLabel, setBadgeLabel] = useState('Watchlist');
-//   const [error, setError] = useState(null);
-//   const [loading, setLoading] = useState(true);
+
+//   // Derive once — avoids re-creating on every render
+//   const symbolUpper = symbol?.toUpperCase() ?? '';
+
+//   const [data, setData]                   = useState(null);
+//   const [industryRankings, setIndustryRankings] = useState(null);
+//   const [liveNews, setLiveNews]           = useState([]);
+//   const [newsLoading, setNewsLoading]     = useState(true);
+//   const [error, setError]                 = useState(null);
+//   const [loading, setLoading]             = useState(true);
 //   const [activeNewsIdx, setActiveNewsIdx] = useState(null);
 
+//   // ── Fetch company data + sector rankings ──────────────────────────────────
 //   useEffect(() => {
-//     setLoading(true);
-//     const symbolUpper = symbol.toUpperCase();
+//     if (!symbolUpper) return;
 
-//     // Fetch Company Data and All Sectors simultaneously from the API
+//     let cancelled = false; // guard against setting state on unmounted component
+//     setLoading(true);
+//     setError(null);
+
 //     Promise.all([
 //       fetchQualitativeAnalysis(symbolUpper),
-//       fetchAllSectors()
+//       fetchAllSectors(),
 //     ])
 //       .then(([companyRes, sectorsRes]) => {
+//         if (cancelled) return;
 //         setData(companyRes);
 
-//         // --- NEW TAG LOGIC (Using API Data) ---
-//         let label = 'Watchlist';
-//         try {
-//           const targetIndustry = sectorsRes.find(ind => 
-//             ind?.rankings?.fundamental_investor?.some(c => c.company === symbolUpper)
-//           );
-
-//           if (targetIndustry && targetIndustry.rankings?.fundamental_investor) {
-//             const rawList = [...targetIndustry.rankings.fundamental_investor];
-//             const hasScores = !!rawList.some(item => item.score !== undefined && item.score !== null);
-
-//             if (hasScores) {
-//               rawList.sort((a, b) => (b.score || 0) - (a.score || 0));
-//             } else {
-//               rawList.sort((a, b) => (a.rank !== undefined ? a.rank : 999) - (b.rank !== undefined ? b.rank : 999));
-//             }
-
-//             const total = rawList.length;
-//             const top20Count = Math.ceil(total * 0.20);
-//             const mid50Count = Math.ceil(total * 0.50);
-//             const computedIndex = rawList.findIndex(item => item.company === symbolUpper);
-
-//             if (computedIndex !== -1) {
-//               if (computedIndex < top20Count) label = 'Dash Pick';
-//               else if (computedIndex < top20Count + mid50Count) label = 'Watchlist';
-//               else label = 'Avoid';
-//             }
-//           }
-//         } catch (err) {
-//           console.error('Error calculating badge:', err);
-//         }
-//         setBadgeLabel(label);
+//         const targetIndustry = sectorsRes.find(ind =>
+//           ind?.rankings?.fundamental_investor?.some(c => c.company === symbolUpper)
+//         );
+//         if (targetIndustry?.rankings) setIndustryRankings(targetIndustry.rankings);
 //         setLoading(false);
 //       })
 //       .catch((err) => {
-//         console.error(err);
-//         setError(`Failed to load data for ${symbol.toUpperCase()}.`);
+//         if (cancelled) return;
+//         console.error('[CompanyDashboard] Data fetch error:', err);
+//         setError(`Failed to load data for ${symbolUpper}.`);
 //         setLoading(false);
 //       });
-//   }, [symbol]);
 
-//   if (loading) return <div className="p-10 text-center text-gray-400">Loading Dashboard...</div>;
-//   if (error || !data) return <div className="p-10 text-center text-red-400">{error || 'Data not found.'}</div>;
+//     return () => { cancelled = true; };
+//   }, [symbolUpper]); // ← only re-run when the symbol changes
 
+//   // ── Fetch live news independently ─────────────────────────────────────────
+//   // fetchLiveNews always resolves (never rejects), so setNewsLoading(false)
+//   // is guaranteed to be called — no stuck loading state.
+//   useEffect(() => {
+//     if (!symbolUpper) return;
+
+//     let cancelled = false;
+//     setNewsLoading(true);
+
+//     fetchLiveNews(symbolUpper)
+//       .then((news) => {
+//         if (cancelled) return;
+//         setLiveNews(Array.isArray(news) ? news : []);
+//         setNewsLoading(false);
+//       })
+//       .catch(() => {
+//         if (cancelled) return;
+//         setLiveNews([]);
+//         setNewsLoading(false);
+//       });
+
+//     return () => { cancelled = true; };
+//   }, [symbolUpper]);
+
+//   // ── Guard renders ─────────────────────────────────────────────────────────
+//   if (loading) {
+//     return <div className="p-10 text-center text-gray-400">Loading Dashboard…</div>;
+//   }
+//   if (error || !data) {
+//     return <div className="p-10 text-center text-red-400">{error || 'Data not found.'}</div>;
+//   }
+
+//   // ── Destructure company data ──────────────────────────────────────────────
 //   const {
 //     business_overview,
 //     business_quality_signals,
@@ -79,95 +107,96 @@
 //     return_profile_signals,
 //     governance_signals,
 //     pros_and_cons,
-//     quantitative_data
+//     quantitative_data,
 //   } = data;
 
-//   const symbolUpper = symbol.toUpperCase();
 //   const Scores = {
-//     BQ: { 
-//       val: business_quality_signals?.BQ, 
-//       justification: business_quality_signals?.reasoning_points 
-//     },
-//     CY: { 
-//       val: cyclicality_signals?.CY, 
-//       justification: cyclicality_signals?.reasoning_points 
-//     },
-//     RP: { 
-//       val: return_profile_signals?.RP, 
-//       justification: return_profile_signals?.reasoning_points 
-//     },
-//     BG: { 
-//       val: governance_signals?.BG, 
-//       justification: governance_signals?.reasoning_points 
-//     }
+//     BQ: { val: business_quality_signals?.BQ,  justification: business_quality_signals?.reasoning_points },
+//     RP: { val: return_profile_signals?.RP,     justification: return_profile_signals?.reasoning_points },
+//     CY: { val: cyclicality_signals?.CY,        justification: cyclicality_signals?.reasoning_points },
+//     BG: { val: governance_signals?.BG,         justification: governance_signals?.reasoning_points },
 //   };
 
-//   const Pros = pros_and_cons?.pros || [];
-//   const Cons = pros_and_cons?.cons || [];
+//   const Pros          = pros_and_cons?.pros || [];
+//   const Cons          = pros_and_cons?.cons || [];
+//   const recentMetrics = quantitative_data?.Recent   || {};
+//   const historical    = quantitative_data?.Historical || {};
 
-//   const recentMetrics = quantitative_data?.Recent || {};
-//   const historical = quantitative_data?.Historical || {};
-//   const recentNews = quantitative_data?.Recent_News || quantitative_data?.recent_news || [];
+//   const fundamentalFinalScore = data.fundamental_score
+//     ? parseFloat(data.fundamental_score).toFixed(2)
+//     : (
+//         ((Scores.BQ.val || 0) + (Scores.RP.val || 0) +
+//          (Scores.CY.val || 0) + (Scores.BG.val || 0)) / 4
+//       ).toFixed(2);
 
-//   // --- MENTOR UPDATES: Fundamental Score & Contradiction Check ---
-  
-//   // 1. Extract the calculated scores from the backend (or fallback to manual average)
-//   const fundamentalFinalScore = data.fundamental_score 
-//     ? parseFloat(data.fundamental_score).toFixed(2) 
-//     : (((Scores.BQ || 0) + (Scores.CY || 0) + (Scores.RP || 0) + (Scores.BG || 0)) / 4).toFixed(2);
-    
 //   const zScore = data.z_score ? parseFloat(data.z_score).toFixed(4) : null;
 
-//   // 2. Check for Market Contradiction (Mentor point: "-ve returns contradict")
-//   const return1Y = historical['Return over 1year'];
-//   const isContradicting = fundamentalFinalScore > 70 && return1Y < 0;
-
-//   const Chart_Data = [
+//   const chartData = [
 //     { date: '5Y', value: historical['Return over 5years'] ? historical['Return over 5years'] * 100 : 0 },
 //     { date: '3Y', value: historical['Return over 3years'] ? historical['Return over 3years'] * 100 : 0 },
-//     { date: '1Y', value: historical['Return over 1year'] ? historical['Return over 1year'] * 100 : 0 }
+//     { date: '1Y', value: historical['Return over 1year']  ? historical['Return over 1year']  * 100 : 0 },
 //   ];
 
+//   const contradiction = generateContradiction(data);
+//   const contradictionStyles = {
+//     contradiction: { wrapper: 'bg-red-950/30 border-red-900/50',    glow: 'bg-red-500/10',    title: 'text-red-400',    icon: '⚠️' },
+//     optimism:      { wrapper: 'bg-amber-950/30 border-amber-900/50', glow: 'bg-amber-500/10',  title: 'text-amber-400',  icon: '📈' },
+//     divergence:    { wrapper: 'bg-orange-950/30 border-orange-900/50', glow: 'bg-orange-500/10', title: 'text-orange-400', icon: '↕️' },
+//   };
+//   const cStyle = contradiction ? contradictionStyles[contradiction.type] : null;
+
+//   // ── Render ────────────────────────────────────────────────────────────────
 //   return (
 //     <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-8 fade-in">
-//       {/* Navigation */}
+
+//       {/* ── Navigation ── */}
 //       <div className="flex items-center justify-between mb-2">
-//         <Link to="/" className="text-gray-500 hover:text-insight-blue transition-colors flex items-center gap-2 text-sm font-medium">
+//         <Link
+//           to="/"
+//           className="text-gray-500 hover:text-insight-blue transition-colors flex items-center gap-2 text-sm font-medium"
+//         >
 //           <ArrowLeft size={16} /> Back to Home
 //         </Link>
-//         <Link to={`/company/${symbol}/peers`} className="text-insight-purple hover:text-white transition-colors flex items-center gap-2 text-sm font-medium bg-insight-purple/10 px-4 py-2 rounded-full border border-insight-purple/30 shadow">
+//         <Link
+//           to={`/company/${symbol}/peers`}
+//           className="text-insight-blue hover:text-white transition-colors flex items-center gap-2 text-sm font-medium bg-insight-blue/10 px-4 py-2 rounded-full border border-insight-blue/30 shadow"
+//         >
 //           <Users size={16} /> Compare Peers
 //         </Link>
 //       </div>
 
-//       {/* Header */}
+//       {/* ── Header ── */}
 //       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-insight-card p-6 rounded-2xl border border-gray-800 shadow relative overflow-hidden">
 //         <div className="relative z-10 text-left">
 //           <h1 className="text-3xl md:text-4xl font-bold text-gray-100">{symbolUpper}</h1>
-//           <p className="text-gray-400 mt-1 flex items-center gap-3">
-//             <span>{business_overview?.industry_position || 'Industry Leader'}</span>
-//           </p>
+//           <p className="text-gray-400 mt-1">{business_overview?.industry_position || 'Industry Leader'}</p>
 //         </div>
-//         <div className="flex items-center gap-3">
-//   <TagBadge 
-//     label={getInvestmentTag(symbolUpper, targetIndustry?.rankings || {})} 
-//     className="text-lg px-4 py-1" 
-//   />
-// </div>
-//         <div className="absolute top-0 right-0 w-64 h-64 bg-insight-blue/5 rounded-full blur-[80px]" />
+//         <div className="flex items-center gap-3 relative z-10">
+//           <TagBadge label={getInvestmentTag(symbolUpper, industryRankings)} className="text-lg px-4 py-1" />
+//         </div>
+//         {/* Subtle ambient glow — not a gradient on the scores */}
+//         <div className="absolute top-0 right-0 w-64 h-64 bg-insight-blue/5 rounded-full blur-[80px] pointer-events-none" />
 //       </header>
 
-//       {/* Score Cards Row */}
+//       {/* ── Core AI Evaluation (ScoreCard) ── */}
+//       {/*
+//         ScoreCard receives the Scores object and renders BQ / RP / CY / BG cards.
+//         Each card shows: acronym, full label, numeric score, a thin accent bar, and
+//         collapsible reasoning points. No gradients — solid dark card backgrounds.
+//       */}
 //       <section>
-//         <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1">Core AI Evaluation</h2>
+//         <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1">
+//           Core AI Evaluation
+//         </h2>
 //         <ScoreCard scores={Scores} />
 //       </section>
 
-//       {/* --- MENTOR UPDATES: Final Score & Contradiction Warning --- */}
-//       <section className="flex flex-col md:flex-row gap-6 mb-8">
-//         {/* Fundamental Final Score Box */}
-//         <div className="bg-insight-blue/10 border border-insight-blue/30 p-6 rounded-2xl flex-1 flex flex-col items-center justify-center text-center shadow-lg">
-//           <h3 className="text-insight-blue text-xs tracking-widest uppercase font-bold mb-2">Fundamental Final Score</h3>
+//       {/* ── Final Score + Contradiction ── */}
+//       <section className="flex flex-col md:flex-row gap-6">
+//         <div className="bg-insight-card border border-gray-800 p-6 rounded-2xl flex-1 flex flex-col items-center justify-center text-center shadow">
+//           <h3 className="text-insight-blue text-xs tracking-widest uppercase font-bold mb-2">
+//             Fundamental Final Score
+//           </h3>
 //           <p className="text-5xl font-extrabold text-white">{fundamentalFinalScore}</p>
 //           {zScore && (
 //             <p className="text-sm text-gray-400 font-medium mt-3 bg-gray-900/50 px-3 py-1 rounded-full">
@@ -176,52 +205,29 @@
 //           )}
 //         </div>
 
-//         {/* Contradiction Warning Box (Only shows if AI score is high but stock is crashing) */}
-//         {(() => {
-//   const aiScore = parseFloat(fundamentalFinalScore);
-//   const oneYearReturn = historical['Return over 1year'] || 0;
-//   const threeMonthReturn = historical['Return over 3months'] || 0;
-
-//   let title = null;
-//   let message = "";
-
-//   if (aiScore > 75 && oneYearReturn < -8) {
-//     title = "Market Contradiction";
-//     message = `AI fundamentals are very strong (${aiScore.toFixed(2)}), but the stock has fallen sharply over the last 1 year (${(oneYearReturn * 100).toFixed(2)}%). Market may be pricing in macro headwinds or sector rotation.`;
-//   } 
-//   else if (aiScore < 55 && oneYearReturn > 20) {
-//     title = "Market Optimism";
-//     message = `AI scores are moderate (${aiScore.toFixed(2)}), yet the stock has risen strongly (${(oneYearReturn * 100).toFixed(2)}%). Market appears to be betting on future growth not yet visible in the annual report.`;
-//   } 
-//   else if (Math.abs(aiScore - (oneYearReturn * 100 + 50)) > 45) {
-//     title = "Score-Price Divergence";
-//     message = `AI score and market performance are significantly misaligned. External factors (macro, sentiment, sector news) may be dominating.`;
-//   }
-
-//   return title ? (
-//     <div className="bg-red-950/30 border border-red-900/50 p-6 rounded-2xl flex-1 flex flex-col justify-center relative overflow-hidden">
-//       <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 rounded-full blur-[40px]" />
-//       <h3 className="text-red-400 font-bold flex items-center gap-2 mb-3 text-lg relative z-10">
-//         <span className="text-2xl">⚠️</span> {title}
-//       </h3>
-//       <p className="text-sm text-gray-300 leading-relaxed relative z-10">{message}</p>
-//     </div>
-//   ) : null;
-// })()}
+//         {contradiction && cStyle && (
+//           <div className={`border p-6 rounded-2xl flex-1 flex flex-col justify-center relative overflow-hidden ${cStyle.wrapper}`}>
+//             <div className={`absolute top-0 right-0 w-32 h-32 rounded-full blur-[40px] ${cStyle.glow} pointer-events-none`} />
+//             <h3 className={`font-bold flex items-center gap-2 mb-3 text-lg relative z-10 ${cStyle.title}`}>
+//               <span className="text-2xl">{cStyle.icon}</span> {contradiction.title}
+//             </h3>
+//             <p className="text-sm text-gray-300 leading-relaxed relative z-10">{contradiction.message}</p>
+//           </div>
+//         )}
 //       </section>
 
-//       {/* Chart Section */}
+//       {/* ── Historical Trends ── */}
 //       <section className="relative">
 //         <div className="flex items-center justify-between mb-4 px-1">
-//           <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold flex items-center gap-2">Historical Return Trend (%)</h2>
+//           <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold">Historical Trends (%)</h2>
 //         </div>
-//         <ChartCard data={Chart_Data} />
+//         <ChartCard data={chartData} />
 //       </section>
 
-//       {/* Pros & Cons */}
+//       {/* ── Pros & Cons ── */}
 //       {(Pros.length > 0 || Cons.length > 0) && (
 //         <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-//           <div className="bg-green-950/20 border border-green-900/50 p-6 rounded-2xl shadow-inner shadow-green-900/10">
+//           <div className="bg-green-950/20 border border-green-900/50 p-6 rounded-2xl">
 //             <h3 className="text-green-500 font-bold mb-4 flex items-center gap-2 uppercase text-xs tracking-widest">
 //               <span className="w-2 h-2 rounded-full bg-green-500" /> Pros
 //             </h3>
@@ -234,7 +240,7 @@
 //               ))}
 //             </ul>
 //           </div>
-//           <div className="bg-red-950/20 border border-red-900/50 p-6 rounded-2xl shadow-inner shadow-red-900/10">
+//           <div className="bg-red-950/20 border border-red-900/50 p-6 rounded-2xl">
 //             <h3 className="text-red-500 font-bold mb-4 flex items-center gap-2 uppercase text-xs tracking-widest">
 //               <span className="w-2 h-2 rounded-full bg-red-500" /> Cons
 //             </h3>
@@ -250,350 +256,106 @@
 //         </section>
 //       )}
 
-//       {/* Market Snapshot */}
+//       {/* ── Market Snapshot ── */}
 //       <section>
 //         <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1">Market Snapshot</h2>
 //         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-//           {recentMetrics["Price to Earning"] !== null && recentMetrics["Price to Earning"] !== undefined && (
-//             <MetricCard label="PE Ratio" value={recentMetrics["Price to Earning"]} />
-//           )}
-//           {recentMetrics["Return on equity"] !== null && recentMetrics["Return on equity"] !== undefined && (
-//             <MetricCard label="ROE" value={(recentMetrics["Return on equity"] * 100).toFixed(2) + '%'} />
-//           )}
-//           {recentMetrics["Return on capital employed"] !== null && recentMetrics["Return on capital employed"] !== undefined && (
-//             <MetricCard label="ROCE" value={(recentMetrics["Return on capital employed"] * 100).toFixed(2) + '%'} />
-//           )}
-//           {recentMetrics["Debt to equity"] !== null && recentMetrics["Debt to equity"] !== undefined && (
-//             <MetricCard label="Debt/Equity" value={recentMetrics["Debt to equity"]} />
-//           )}
-//           {recentMetrics["Dividend yield"] !== null && recentMetrics["Dividend yield"] !== undefined && (
-//             <MetricCard label="Dividend Yield" value={recentMetrics["Dividend yield"]} />
-//           )}
-//           {recentMetrics["EPS"] !== null && recentMetrics["EPS"] !== undefined && (
-//             <MetricCard label="EPS" value={recentMetrics["EPS"]} />
-//           )}
-//           {recentMetrics["Sales growth"] !== null && recentMetrics["Sales growth"] !== undefined && (
-//             <MetricCard label="Sales Growth" value={(recentMetrics["Sales growth"] * 100).toFixed(2) + '%'} />
-//           )}
-//           {recentMetrics["Profit growth"] !== null && recentMetrics["Profit growth"] !== undefined && (
-//             <MetricCard label="Profit Growth" value={(recentMetrics["Profit growth"] * 100).toFixed(2) + '%'} />
-//           )}
+//           {recentMetrics['Price to Earning']          != null && <MetricCard label="PE Ratio"       value={recentMetrics['Price to Earning']} />}
+//           {recentMetrics['Return on equity']          != null && <MetricCard label="ROE"            value={(recentMetrics['Return on equity']          * 100).toFixed(2) + '%'} />}
+//           {recentMetrics['Return on capital employed']!= null && <MetricCard label="ROCE"           value={(recentMetrics['Return on capital employed'] * 100).toFixed(2) + '%'} />}
+//           {recentMetrics['Debt to equity']            != null && <MetricCard label="Debt/Equity"    value={recentMetrics['Debt to equity']} />}
+//           {recentMetrics['Dividend yield']            != null && <MetricCard label="Dividend Yield" value={recentMetrics['Dividend yield']} />}
+//           {recentMetrics['EPS']                       != null && <MetricCard label="EPS"            value={recentMetrics['EPS']} />}
+//           {recentMetrics['Sales growth']              != null && <MetricCard label="Sales Growth"   value={(recentMetrics['Sales growth']   * 100).toFixed(2) + '%'} />}
+//           {recentMetrics['Profit growth']             != null && <MetricCard label="Profit Growth"  value={(recentMetrics['Profit growth']  * 100).toFixed(2) + '%'} />}
 //         </div>
 //       </section>
 
-//       {/* Recent News */}
-//       {recentNews.length > 0 && (
+//       {/* ── Latest News ────────────────────────────────────────────────────────
+//           - Skeleton pulsed while newsLoading = true
+//           - Hides entirely if no articles returned
+//           - fetchLiveNews never throws — always resolves with [] on failure
+//       ── */}
+//       {newsLoading ? (
 //         <section>
-//           <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1">Recent News</h2>
+//           <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1 flex items-center gap-2">
+//             <Newspaper size={14} /> Latest News
+//           </h2>
 //           <div className="space-y-3">
-//             {recentNews.map((item, idx) => (
-//               <div
-//                 key={`${item.link || item.title || 'news'}-${idx}`}
-//                 className={`relative block overflow-hidden bg-insight-card p-4 rounded-xl border border-gray-800 transition-all duration-300 ${
-//                   activeNewsIdx === idx
-//                     ? 'shadow-lg shadow-insight-blue/20 -translate-y-0.5'
-//                     : ''
-//                 }`}
-//               >
-//                 <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 bg-gradient-to-r from-insight-blue/10 via-transparent to-insight-purple/10 ${
-//                   activeNewsIdx === idx ? 'opacity-100' : 'opacity-0'
-//                 }`} />
-//                 <p className={`text-sm md:text-base font-medium leading-relaxed transition-colors duration-300 ${
-//                   activeNewsIdx === idx ? 'text-insight-blue' : 'text-gray-100'
-//                 }`}>
-//                   {item.title || 'Untitled article'}
-//                 </p>
-//                 <div className="relative z-10 mt-3 flex items-center justify-between gap-3">
-//                   <p className={`text-xs transition-colors duration-300 ${
-//                     activeNewsIdx === idx ? 'text-gray-200' : 'text-gray-400'
-//                   }`}>
-//                     {item.publisher || 'Unknown publisher'}
-//                   </p>
-//                   <a
-//                     href={item.link || '#'}
-//                     target="_blank"
-//                     rel="noreferrer noopener"
-//                     onMouseEnter={() => setActiveNewsIdx(idx)}
-//                     onMouseLeave={() => setActiveNewsIdx(null)}
-//                     onFocus={() => setActiveNewsIdx(idx)}
-//                     onBlur={() => setActiveNewsIdx(null)}
-//                     className="inline-flex items-center gap-1 text-[11px] uppercase tracking-wider font-semibold text-insight-blue hover:text-white bg-insight-blue/10 hover:bg-insight-blue px-2.5 py-1 rounded-full transition-colors duration-300"
-//                   >
-//                     Explore news
-//                     <ArrowUpRight
-//                       size={13}
-//                       className={`transition-transform duration-300 ${
-//                         activeNewsIdx === idx ? 'translate-x-0.5 -translate-y-0.5' : ''
-//                       }`}
-//                     />
-//                   </a>
-//                 </div>
+//             {[0, 1, 2].map((i) => (
+//               <div key={i} className="bg-insight-card p-4 rounded-xl border border-gray-800 animate-pulse">
+//                 <div className="h-4 bg-gray-700 rounded w-3/4 mb-2" />
+//                 <div className="h-3 bg-gray-800 rounded w-full mb-3" />
+//                 <div className="h-3 bg-gray-800 rounded w-1/4" />
 //               </div>
 //             ))}
 //           </div>
 //         </section>
-//       )}
+//       ) : liveNews.length > 0 ? (
+//         <section>
+//           <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1 flex items-center gap-2">
+//             <Newspaper size={14} /> Latest News
+//           </h2>
+//           <div className="space-y-3">
+//             {liveNews.map((item, idx) => (
+//               <a
+//                 key={idx}
+//                 href={item.link}
+//                 target="_blank"
+//                 rel="noreferrer noopener"
+//                 onMouseEnter={() => setActiveNewsIdx(idx)}
+//                 onMouseLeave={() => setActiveNewsIdx(null)}
+//                 className={`relative block overflow-hidden bg-insight-card p-4 rounded-xl border transition-all duration-200 no-underline ${
+//                   activeNewsIdx === idx
+//                     ? 'border-insight-blue/40 shadow-md -translate-y-0.5'
+//                     : 'border-gray-800'
+//                 }`}
+//               >
+//                 {/* Headline */}
+//                 <p className={`text-sm md:text-base font-semibold leading-snug transition-colors duration-200 ${
+//                   activeNewsIdx === idx ? 'text-insight-blue' : 'text-gray-100'
+//                 }`}>
+//                   {item.title}
+//                 </p>
 
-//     </div>
-//   );
-// }
+//                 {/* Summary — only if present */}
+//                 {item.summary && (
+//                   <p className="text-xs text-gray-400 leading-relaxed mt-1.5 line-clamp-2">
+//                     {item.summary}
+//                   </p>
+//                 )}
 
-
-
-// import React, { useEffect, useState } from 'react';
-// import { useParams, Link } from 'react-router-dom';
-// import { fetchQualitativeAnalysis, fetchAllSectors } from '../utils/dataFetcher';
-// import TagBadge from '../components/TagBadge';
-// import ScoreCard from '../components/ScoreCard';
-// import MetricCard from '../components/MetricCard';
-// import ChartCard from '../components/ChartCard';
-// import { ArrowLeft, Users, ArrowUpRight } from 'lucide-react';
-// import { getInvestmentTag } from '../utils/getInvestmentTag';
-
-// export default function CompanyDashboard() {
-//   const { symbol } = useParams();
-//   const [data, setData] = useState(null);
-//   const [industryRankings, setIndustryRankings] = useState(null); // NEW: Save rankings to state
-//   const [error, setError] = useState(null);
-//   const [loading, setLoading] = useState(true);
-//   const [activeNewsIdx, setActiveNewsIdx] = useState(null);
-
-//   const symbolUpper = symbol.toUpperCase();
-
-//   useEffect(() => {
-//     setLoading(true);
-
-//     Promise.all([
-//       fetchQualitativeAnalysis(symbolUpper),
-//       fetchAllSectors()
-//     ])
-//       .then(([companyRes, sectorsRes]) => {
-//         setData(companyRes);
-
-//         // Find this company's industry to get peer rankings
-//         const targetIndustry = sectorsRes.find(ind => 
-//           ind?.rankings?.fundamental_investor?.some(c => c.company === symbolUpper)
-//         );
-
-//         if (targetIndustry && targetIndustry.rankings) {
-//           setIndustryRankings(targetIndustry.rankings);
-//         }
-        
-//         setLoading(false);
-//       })
-//       .catch((err) => {
-//         console.error(err);
-//         setError(`Failed to load data for ${symbolUpper}.`);
-//         setLoading(false);
-//       });
-//   }, [symbolUpper]);
-
-//   if (loading) return <div className="p-10 text-center text-gray-400">Loading Dashboard...</div>;
-//   if (error || !data) return <div className="p-10 text-center text-red-400">{error || 'Data not found.'}</div>;
-
-//   const {
-//     business_overview,
-//     business_quality_signals,
-//     cyclicality_signals,
-//     return_profile_signals,
-//     governance_signals,
-//     pros_and_cons,
-//     quantitative_data
-//   } = data;
-
-//   const Scores = {
-//     BQ: { val: business_quality_signals?.BQ, justification: business_quality_signals?.reasoning_points },
-//     CY: { val: cyclicality_signals?.CY, justification: cyclicality_signals?.reasoning_points },
-//     RP: { val: return_profile_signals?.RP, justification: return_profile_signals?.reasoning_points },
-//     BG: { val: governance_signals?.BG, justification: governance_signals?.reasoning_points }
-//   };
-
-//   const Pros = pros_and_cons?.pros || [];
-//   const Cons = pros_and_cons?.cons || [];
-//   const recentMetrics = quantitative_data?.Recent || {};
-//   const historical = quantitative_data?.Historical || {};
-//   const recentNews = quantitative_data?.Recent_News || quantitative_data?.recent_news || [];
-
-//   // --- FUNDAMENTAL SCORES ---
-//   const fundamentalFinalScore = data.fundamental_score 
-//     ? parseFloat(data.fundamental_score).toFixed(2) 
-//     : (((Scores.BQ.val || 0) + (Scores.CY.val || 0) + (Scores.RP.val || 0) + (Scores.BG.val || 0)) / 4).toFixed(2);
-    
-//   const zScore = data.z_score ? parseFloat(data.z_score).toFixed(4) : null;
-
-//   const Chart_Data = [
-//     { date: '5Y', value: historical['Return over 5years'] ? historical['Return over 5years'] * 100 : 0 },
-//     { date: '3Y', value: historical['Return over 3years'] ? historical['Return over 3years'] * 100 : 0 },
-//     { date: '1Y', value: historical['Return over 1year'] ? historical['Return over 1year'] * 100 : 0 }
-//   ];
-
-//   return (
-//     <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-8 fade-in">
-//       {/* Navigation */}
-//       <div className="flex items-center justify-between mb-2">
-//         <Link to="/" className="text-gray-500 hover:text-insight-blue transition-colors flex items-center gap-2 text-sm font-medium">
-//           <ArrowLeft size={16} /> Back to Home
-//         </Link>
-//         <Link to={`/company/${symbol}/peers`} className="text-insight-purple hover:text-white transition-colors flex items-center gap-2 text-sm font-medium bg-insight-purple/10 px-4 py-2 rounded-full border border-insight-purple/30 shadow">
-//           <Users size={16} /> Compare Peers
-//         </Link>
-//       </div>
-
-//       {/* Header */}
-//       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-insight-card p-6 rounded-2xl border border-gray-800 shadow relative overflow-hidden">
-//         <div className="relative z-10 text-left">
-//           <h1 className="text-3xl md:text-4xl font-bold text-gray-100">{symbolUpper}</h1>
-//           <p className="text-gray-400 mt-1 flex items-center gap-3">
-//             <span>{business_overview?.industry_position || 'Industry Leader'}</span>
-//           </p>
-//         </div>
-//         <div className="flex items-center gap-3 relative z-10">
-//           {/* DYNAMIC TAG INJECTION HERE */}
-//           <TagBadge 
-//             label={getInvestmentTag(symbolUpper, industryRankings)} 
-//             className="text-lg px-4 py-1" 
-//           />
-//         </div>
-//         <div className="absolute top-0 right-0 w-64 h-64 bg-insight-blue/5 rounded-full blur-[80px]" />
-//       </header>
-
-//       {/* Score Cards Row */}
-//       <section>
-//         <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1">Core AI Evaluation</h2>
-//         <ScoreCard scores={Scores} />
-//       </section>
-
-//       {/* Final Score & Contradiction Warning */}
-//       <section className="flex flex-col md:flex-row gap-6 mb-8">
-//         <div className="bg-insight-blue/10 border border-insight-blue/30 p-6 rounded-2xl flex-1 flex flex-col items-center justify-center text-center shadow-lg">
-//           <h3 className="text-insight-blue text-xs tracking-widest uppercase font-bold mb-2">Fundamental Final Score</h3>
-//           <p className="text-5xl font-extrabold text-white">{fundamentalFinalScore}</p>
-//           {zScore && (
-//             <p className="text-sm text-gray-400 font-medium mt-3 bg-gray-900/50 px-3 py-1 rounded-full">
-//               Global Z-Score: <span className="text-gray-200">{zScore}</span>
-//             </p>
-//           )}
-//         </div>
-
-//         {/* --- DYNAMIC MARKET CONTRADICTION --- */}
-//         {(() => {
-//           const aiScore = parseFloat(fundamentalFinalScore);
-//           const oneYearReturn = historical['Return over 1year'] || 0;
-
-//           let title = null;
-//           let message = "";
-
-//           if (aiScore > 75 && oneYearReturn < -0.05) {
-//             title = "Market Contradiction";
-            
-//             // Fetch a GENUINE negative reason from the company's AI data
-//             const primaryRisk = Cons[0] || 
-//                                 data?.risk_analysis?.industry_risks?.[0]?.risk || 
-//                                 data?.risk_analysis?.operational_risks?.[0]?.risk || 
-//                                 "undisclosed sector headwinds";
-
-//             message = `AI fundamentals are strong (${aiScore.toFixed(2)}), but the stock has dropped ${(oneYearReturn * 100).toFixed(2)}% over 1 year. The market may be heavily discounting the stock due to concerns regarding: "${primaryRisk}".`;
-//           } 
-//           else if (aiScore < 55 && oneYearReturn > 0.15) {
-//             title = "Market Optimism";
-            
-//             // Fetch a GENUINE positive reason from the company's AI data
-//             const primaryCatalyst = Pros[0] || 
-//                                     data?.return_profile_signals?.structural_growth_drivers?.[0] || 
-//                                     data?.return_profile_signals?.new_business_optionalities?.[0] || 
-//                                     "future growth expectations";
-
-//             message = `AI baseline scores are moderate (${aiScore.toFixed(2)}), yet the stock has rallied ${(oneYearReturn * 100).toFixed(2)}% over 1 year. Investors appear to be looking past current fundamentals, betting heavily on: "${primaryCatalyst}".`;
-//           } 
-//           else if (Math.abs(aiScore - (oneYearReturn * 100 + 50)) > 45) {
-//             title = "Score-Price Divergence";
-            
-//             const divergenceReason = Cons[0] ? `Take a closer look at risks like: "${Cons[0]}"` : "Consider reviewing the Risk Analysis section.";
-//             message = `The fundamental score (${aiScore.toFixed(2)}) diverges significantly from the recent market trend. ${divergenceReason}`;
-//           }
-
-//           return title ? (
-//             <div className="bg-red-950/30 border border-red-900/50 p-6 rounded-2xl flex-1 flex flex-col justify-center relative overflow-hidden">
-//               <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 rounded-full blur-[40px]" />
-//               <h3 className="text-red-400 font-bold flex items-center gap-2 mb-3 text-lg relative z-10">
-//                 <span className="text-2xl">⚠️</span> {title}
-//               </h3>
-//               <p className="text-sm text-gray-300 leading-relaxed relative z-10">{message}</p>
-//             </div>
-//           ) : null;
-//         })()}
-//       </section>
-
-//       {/* Chart Section */}
-//       <section className="relative">
-//         <div className="flex items-center justify-between mb-4 px-1">
-//           <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold flex items-center gap-2">Historical Trends (%)</h2>
-//         </div>
-//         <ChartCard data={Chart_Data} />
-//       </section>
-
-//       {/* Pros & Cons */}
-//       {(Pros.length > 0 || Cons.length > 0) && (
-//         <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-//           <div className="bg-green-950/20 border border-green-900/50 p-6 rounded-2xl shadow-inner shadow-green-900/10">
-//             <h3 className="text-green-500 font-bold mb-4 flex items-center gap-2 uppercase text-xs tracking-widest">
-//               <span className="w-2 h-2 rounded-full bg-green-500" /> Pros
-//             </h3>
-//             <ul className="space-y-3">
-//               {Pros.map((pro, idx) => (
-//                 <li key={idx} className="text-gray-300 text-sm leading-relaxed flex items-start gap-2">
-//                   <span className="mt-1.5 w-1.5 h-1.5 bg-green-500 rounded-full shrink-0" />
-//                   {pro}
-//                 </li>
-//               ))}
-//             </ul>
-//           </div>
-//           <div className="bg-red-950/20 border border-red-900/50 p-6 rounded-2xl shadow-inner shadow-red-900/10">
-//             <h3 className="text-red-500 font-bold mb-4 flex items-center gap-2 uppercase text-xs tracking-widest">
-//               <span className="w-2 h-2 rounded-full bg-red-500" /> Cons
-//             </h3>
-//             <ul className="space-y-3">
-//               {Cons.map((con, idx) => (
-//                 <li key={idx} className="text-gray-300 text-sm leading-relaxed flex items-start gap-2">
-//                   <span className="mt-1.5 w-1.5 h-1.5 bg-red-500 rounded-full shrink-0" />
-//                   {con}
-//                 </li>
-//               ))}
-//             </ul>
+//                 {/* Footer */}
+//                 <div className="mt-3 flex items-center justify-between gap-3">
+//                   <div className="flex items-center gap-2 flex-wrap">
+//                     {item.publisher && (
+//                       <span className={`text-xs font-medium transition-colors duration-200 ${
+//                         activeNewsIdx === idx ? 'text-gray-200' : 'text-gray-500'
+//                       }`}>
+//                         {item.publisher}
+//                       </span>
+//                     )}
+//                     {item.published_at && (
+//                       <span className="text-[10px] text-gray-600 bg-gray-800/60 px-2 py-0.5 rounded-full border border-gray-700/50">
+//                         {item.published_at}
+//                       </span>
+//                     )}
+//                   </div>
+//                   <ArrowUpRight
+//                     size={14}
+//                     className={`shrink-0 transition-all duration-200 ${
+//                       activeNewsIdx === idx
+//                         ? 'text-insight-blue translate-x-0.5 -translate-y-0.5'
+//                         : 'text-gray-600'
+//                     }`}
+//                   />
+//                 </div>
+//               </a>
+//             ))}
 //           </div>
 //         </section>
-//       )}
+//       ) : null}
 
-//       {/* Market Snapshot */}
-//       <section>
-//         <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1">Market Snapshot</h2>
-//         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-//           {recentMetrics["Price to Earning"] !== null && recentMetrics["Price to Earning"] !== undefined && (
-//             <MetricCard label="PE Ratio" value={recentMetrics["Price to Earning"]} />
-//           )}
-//           {recentMetrics["Return on equity"] !== null && recentMetrics["Return on equity"] !== undefined && (
-//             <MetricCard label="ROE" value={(recentMetrics["Return on equity"] * 100).toFixed(2) + '%'} />
-//           )}
-//           {recentMetrics["Return on capital employed"] !== null && recentMetrics["Return on capital employed"] !== undefined && (
-//             <MetricCard label="ROCE" value={(recentMetrics["Return on capital employed"] * 100).toFixed(2) + '%'} />
-//           )}
-//           {recentMetrics["Debt to equity"] !== null && recentMetrics["Debt to equity"] !== undefined && (
-//             <MetricCard label="Debt/Equity" value={recentMetrics["Debt to equity"]} />
-//           )}
-//           {recentMetrics["Dividend yield"] !== null && recentMetrics["Dividend yield"] !== undefined && (
-//             <MetricCard label="Dividend Yield" value={recentMetrics["Dividend yield"]} />
-//           )}
-//           {recentMetrics["EPS"] !== null && recentMetrics["EPS"] !== undefined && (
-//             <MetricCard label="EPS" value={recentMetrics["EPS"]} />
-//           )}
-//           {recentMetrics["Sales growth"] !== null && recentMetrics["Sales growth"] !== undefined && (
-//             <MetricCard label="Sales Growth" value={(recentMetrics["Sales growth"] * 100).toFixed(2) + '%'} />
-//           )}
-//           {recentMetrics["Profit growth"] !== null && recentMetrics["Profit growth"] !== undefined && (
-//             <MetricCard label="Profit Growth" value={(recentMetrics["Profit growth"] * 100).toFixed(2) + '%'} />
-//           )}
-//         </div>
-//       </section>
 //     </div>
 //   );
 // }
@@ -602,59 +364,300 @@
 
 
 
+// //   const Scores = {
+// //     BQ: { val: business_quality_signals?.BQ,  justification: business_quality_signals?.reasoning_points },
+// //     RP: { val: return_profile_signals?.RP,     justification: return_profile_signals?.reasoning_points },
+// //     CY: { val: cyclicality_signals?.CY,        justification: cyclicality_signals?.reasoning_points },
+// //     BG: { val: governance_signals?.BG,         justification: governance_signals?.reasoning_points },
+// //   };
 
+// //   // ── Core AI Evaluation cards (inline with requested updates) ───────────────
+// //   const coreEvaluationCards = [
+// //     {
+// //       acronym: 'BQ',
+// //       label: 'Business Quality',
+// //       shortDesc: 'Moat, pricing power, scalability',
+// //       val: Scores.BQ.val,
+// //       justification: Scores.BQ.justification || [],
+// //     },
+// //     {
+// //       acronym: 'RP',
+// //       label: 'Return Profile',
+// //       shortDesc: 'ROE, ROCE, capital efficiency',
+// //       val: Scores.RP.val,
+// //       justification: Scores.RP.justification || [],
+// //     },
+// //     {
+// //       acronym: 'CY',
+// //       label: 'Cyclicality',
+// //       shortDesc: 'Revenue stability, demand sensitivity',
+// //       val: Scores.CY.val,
+// //       justification: Scores.CY.justification || [],
+// //     },
+// //     {
+// //       acronym: 'BG',
+// //       label: 'Governance',
+// //       shortDesc: 'Management quality, transparency',
+// //       val: Scores.BG.val,
+// //       justification: Scores.BG.justification || [],
+// //     },
+// //   ];
+
+// //   const Pros          = pros_and_cons?.pros || [];
+// //   const Cons          = pros_and_cons?.cons || [];
+// //   const recentMetrics = quantitative_data?.Recent   || {};
+// //   const historical    = quantitative_data?.Historical || {};
+
+// //   const fundamentalFinalScore = data.fundamental_score
+// //     ? parseFloat(data.fundamental_score).toFixed(2)
+// //     : (
+// //         ((Scores.BQ.val || 0) + (Scores.RP.val || 0) +
+// //          (Scores.CY.val || 0) + (Scores.BG.val || 0)) / 4
+// //       ).toFixed(2);
+
+// //   const zScore = data.z_score ? parseFloat(data.z_score).toFixed(4) : null;
+
+// //   const chartData = [
+// //     { date: '5Y', value: historical['Return over 5years'] ? historical['Return over 5years'] * 100 : 0 },
+// //     { date: '3Y', value: historical['Return over 3years'] ? historical['Return over 3years'] * 100 : 0 },
+// //     { date: '1Y', value: historical['Return over 1year']  ? historical['Return over 1year']  * 100 : 0 },
+// //   ];
+
+// //   const contradiction = generateContradiction(data);
+// //   const contradictionStyles = {
+// //     contradiction: { wrapper: 'bg-red-950/30 border-red-900/50',    glow: 'bg-red-500/10',    title: 'text-red-400',    icon: '⚠️' },
+// //     optimism:      { wrapper: 'bg-amber-950/30 border-amber-900/50', glow: 'bg-amber-500/10',  title: 'text-amber-400',  icon: '📈' },
+// //     divergence:    { wrapper: 'bg-orange-950/30 border-orange-900/50', glow: 'bg-orange-500/10', title: 'text-orange-400', icon: '↕️' },
+// //   };
+// //   const cStyle = contradiction ? contradictionStyles[contradiction.type] : null;
+
+// //   // ── Render ────────────────────────────────────────────────────────────────
+// //   return (
+// //     <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-8 fade-in">
+
+// //       {/* ── Navigation ── */}
+// //       <div className="flex items-center justify-between mb-2">
+// //         <Link
+// //           to="/"
+// //           className="text-gray-500 hover:text-insight-blue transition-colors flex items-center gap-2 text-sm font-medium"
+// //         >
+// //           <ArrowLeft size={16} /> Back to Home
+// //         </Link>
+// //         <Link
+// //           to={`/company/${symbol}/peers`}
+// //           className="text-insight-blue hover:text-white transition-colors flex items-center gap-2 text-sm font-medium bg-insight-blue/10 px-4 py-2 rounded-full border border-insight-blue/30 shadow"
+// //         >
+// //           <Users size={16} /> Compare Peers
+// //         </Link>
+// //       </div>
+
+// //       {/* ── Header ── */}
+// //       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-insight-card p-6 rounded-2xl border border-gray-800 shadow relative overflow-hidden">
+// //         <div className="relative z-10 text-left">
+// //           <h1 className="text-3xl md:text-4xl font-bold text-gray-100">{symbolUpper}</h1>
+// //           <p className="text-gray-400 mt-1">{business_overview?.industry_position || 'Industry Leader'}</p>
+// //         </div>
+// //         <div className="flex items-center gap-3 relative z-10">
+// //           <TagBadge label={getInvestmentTag(symbolUpper, industryRankings)} className="text-lg px-4 py-1" />
+// //         </div>
+// //         {/* Subtle ambient glow — not a gradient on the scores */}
+// //         <div className="absolute top-0 right-0 w-64 h-64 bg-insight-blue/5 rounded-full blur-[80px] pointer-events-none" />
+// //       </header>
+
+// //       {/* ── Core AI Evaluation (updated inline cards) ───────────────────────────
+// //            • Coloured accent bars REMOVED
+// //            • All 4 cards now use uniform text-insight-blue colouring
+// //            • Reasoning is an overlapping dropdown (no card expansion / layout shift)
+// //       ── */}
+// //       <section>
+// //         <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1">
+// //           Core AI Evaluation
+// //         </h2>
+// //         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+// //           {coreEvaluationCards.map((card) => {
+// //             const isExpanded = expandedCards[card.acronym] ?? false;
+
+// //             const toggleExpanded = () => {
+// //               setExpandedCards((prev) => ({
+// //                 ...prev,
+// //                 [card.acronym]: !isExpanded,
+// //               }));
+// //             };
+
+// //             return (
+// //               <div
+// //                 key={card.acronym}
+// //                 className="bg-insight-card border border-gray-800 p-6 rounded-2xl relative overflow-visible shadow"
+// //               >
+// //                 {/* Main card content – fixed height, no expansion */}
+// //                 <div className="flex justify-between items-start mb-6">
+// //                   <div className="flex items-center gap-3 flex-1">
+// //                     <span className="text-3xl font-bold text-insight-blue tracking-tighter">
+// //                       {card.acronym}
+// //                     </span>
+// //                     <div>
+// //                       <h3 className="font-semibold text-white text-xl leading-none">
+// //                         {card.label}
+// //                       </h3>
+// //                       <p className="text-gray-400 text-sm mt-1">
+// //                         {card.shortDesc}
+// //                       </p>
+// //                     </div>
+// //                   </div>
+
+// //                   <div className="text-right">
+// //                     <p className="text-6xl font-extrabold text-insight-blue leading-none">
+// //                       {card.val ?? '—'}
+// //                     </p>
+// //                     <p className="text-xs font-medium text-insight-blue mt-1 tracking-widest">
+// //                       Excellent
+// //                     </p>
+// //                   </div>
+// //                 </div>
+
+// //                 {/* Coloured bar REMOVED */}
+
+// //                 {/* Dropdown trigger */}
+// //                 <button
+// //                   onClick={toggleExpanded}
+// //                   className="flex w-full items-center justify-between text-insight-blue hover:text-white font-medium text-sm border-t border-gray-700 pt-4 transition-colors"
+// //                 >
+// //                   <span>View reasoning</span>
+// //                   <span
+// //                     className={`inline-block text-lg transition-transform duration-200 ${
+// //                       isExpanded ? 'rotate-180' : ''
+// //                     }`}
+// //                   >
+// //                     ▼
+// //                   </span>
+// //                 </button>
+
+// //                 {/* Overlapping dropdown on lower box – does NOT expand the card */}
+// //                 {isExpanded && (
+// //                   <div className="absolute left-0 right-0 top-full mt-3 z-30 bg-insight-card border border-gray-800 rounded-2xl p-6 shadow-2xl">
+// //                     <ul className="space-y-3 text-sm text-gray-300">
+// //                       {card.justification.length > 0 ? (
+// //                         card.justification.map((point, idx) => (
+// //                           <li key={idx} className="flex items-start gap-3">
+// //                             <span className="text-insight-blue text-base mt-px">•</span>
+// //                             <span>{point}</span>
+// //                           </li>
+// //                         ))
+// //                       ) : (
+// //                         <li className="text-gray-400">No reasoning points available.</li>
+// //                       )}
+// //                     </ul>
+// //                   </div>
+// //                 )}
+// //               </div>
+// //             );
+// //           })}
+// //         </div>
+// //       </section>
+
+
+
+
+
+
+/**
+ * CompanyDashboard.jsx
+ *
+ * FINAL VERSION
+ * • Uses the original dashboard structure you provided in the last prompt.
+ * • ScoreCard is imported and used (no inline cards).
+ * • ScoreCard now contains the exact design + overlapping dropdown you requested.
+ * • All other sections (header, final score, trends, pros/cons, news, etc.) are unchanged.
+ */
 
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { fetchQualitativeAnalysis, fetchAllSectors } from '../utils/dataFetcher';
+import { fetchQualitativeAnalysis, fetchAllSectors, fetchLiveNews } from '../utils/dataFetcher';
 import TagBadge from '../components/TagBadge';
 import ScoreCard from '../components/ScoreCard';
 import MetricCard from '../components/MetricCard';
 import ChartCard from '../components/ChartCard';
-import { ArrowLeft, Users, ArrowUpRight } from 'lucide-react';
+import { ArrowLeft, Users, ArrowUpRight, Newspaper } from 'lucide-react';
 import { getInvestmentTag } from '../utils/getInvestmentTag';
 import { generateContradiction } from '../utils/contradictionEngine';
 
 export default function CompanyDashboard() {
   const { symbol } = useParams();
-  const [data, setData] = useState(null);
+
+  // Derive once — avoids re-creating on every render
+  const symbolUpper = symbol?.toUpperCase() ?? '';
+
+  const [data, setData]                   = useState(null);
   const [industryRankings, setIndustryRankings] = useState(null);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [liveNews, setLiveNews]           = useState([]);
+  const [newsLoading, setNewsLoading]     = useState(true);
+  const [error, setError]                 = useState(null);
+  const [loading, setLoading]             = useState(true);
   const [activeNewsIdx, setActiveNewsIdx] = useState(null);
 
-  const symbolUpper = symbol.toUpperCase();
-
+  // ── Fetch company data + sector rankings ──────────────────────────────────
   useEffect(() => {
+    if (!symbolUpper) return;
+
+    let cancelled = false;
     setLoading(true);
+    setError(null);
 
     Promise.all([
       fetchQualitativeAnalysis(symbolUpper),
-      fetchAllSectors()
+      fetchAllSectors(),
     ])
       .then(([companyRes, sectorsRes]) => {
+        if (cancelled) return;
         setData(companyRes);
 
         const targetIndustry = sectorsRes.find(ind =>
           ind?.rankings?.fundamental_investor?.some(c => c.company === symbolUpper)
         );
-
-        if (targetIndustry && targetIndustry.rankings) {
-          setIndustryRankings(targetIndustry.rankings);
-        }
-
+        if (targetIndustry?.rankings) setIndustryRankings(targetIndustry.rankings);
         setLoading(false);
       })
       .catch((err) => {
-        console.error(err);
+        if (cancelled) return;
+        console.error('[CompanyDashboard] Data fetch error:', err);
         setError(`Failed to load data for ${symbolUpper}.`);
         setLoading(false);
       });
+
+    return () => { cancelled = true; };
   }, [symbolUpper]);
 
-  if (loading) return <div className="p-10 text-center text-gray-400">Loading Dashboard...</div>;
-  if (error || !data) return <div className="p-10 text-center text-red-400">{error || 'Data not found.'}</div>;
+  // ── Fetch live news independently ─────────────────────────────────────────
+  useEffect(() => {
+    if (!symbolUpper) return;
 
+    let cancelled = false;
+    setNewsLoading(true);
+
+    fetchLiveNews(symbolUpper)
+      .then((news) => {
+        if (cancelled) return;
+        setLiveNews(Array.isArray(news) ? news : []);
+        setNewsLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLiveNews([]);
+        setNewsLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [symbolUpper]);
+
+  // ── Guard renders ─────────────────────────────────────────────────────────
+  if (loading) {
+    return <div className="p-10 text-center text-gray-400">Loading Dashboard…</div>;
+  }
+  if (error || !data) {
+    return <div className="p-10 text-center text-red-400">{error || 'Data not found.'}</div>;
+  }
+
+  // ── Destructure company data ──────────────────────────────────────────────
   const {
     business_overview,
     business_quality_signals,
@@ -662,104 +665,90 @@ export default function CompanyDashboard() {
     return_profile_signals,
     governance_signals,
     pros_and_cons,
-    quantitative_data
+    quantitative_data,
   } = data;
 
   const Scores = {
-    BQ: { val: business_quality_signals?.BQ, justification: business_quality_signals?.reasoning_points },
-    CY: { val: cyclicality_signals?.CY, justification: cyclicality_signals?.reasoning_points },
-    RP: { val: return_profile_signals?.RP, justification: return_profile_signals?.reasoning_points },
-    BG: { val: governance_signals?.BG, justification: governance_signals?.reasoning_points }
+    BQ: { val: business_quality_signals?.BQ,  justification: business_quality_signals?.reasoning_points },
+    RP: { val: return_profile_signals?.RP,     justification: return_profile_signals?.reasoning_points },
+    CY: { val: cyclicality_signals?.CY,        justification: cyclicality_signals?.reasoning_points },
+    BG: { val: governance_signals?.BG,         justification: governance_signals?.reasoning_points },
   };
 
-  const Pros = pros_and_cons?.pros || [];
-  const Cons = pros_and_cons?.cons || [];
-  const recentMetrics = quantitative_data?.Recent || {};
-  const historical = quantitative_data?.Historical || {};
-  const recentNews = quantitative_data?.Recent_News || quantitative_data?.recent_news || [];
+  const Pros          = pros_and_cons?.pros || [];
+  const Cons          = pros_and_cons?.cons || [];
+  const recentMetrics = quantitative_data?.Recent   || {};
+  const historical    = quantitative_data?.Historical || {};
 
   const fundamentalFinalScore = data.fundamental_score
     ? parseFloat(data.fundamental_score).toFixed(2)
-    : (((Scores.BQ.val || 0) + (Scores.CY.val || 0) + (Scores.RP.val || 0) + (Scores.BG.val || 0)) / 4).toFixed(2);
+    : (
+        ((Scores.BQ.val || 0) + (Scores.RP.val || 0) +
+         (Scores.CY.val || 0) + (Scores.BG.val || 0)) / 4
+      ).toFixed(2);
 
   const zScore = data.z_score ? parseFloat(data.z_score).toFixed(4) : null;
 
-  const Chart_Data = [
+  const chartData = [
     { date: '5Y', value: historical['Return over 5years'] ? historical['Return over 5years'] * 100 : 0 },
     { date: '3Y', value: historical['Return over 3years'] ? historical['Return over 3years'] * 100 : 0 },
-    { date: '1Y', value: historical['Return over 1year'] ? historical['Return over 1year'] * 100 : 0 }
+    { date: '1Y', value: historical['Return over 1year']  ? historical['Return over 1year']  * 100 : 0 },
   ];
 
-  // ── Run the smart contradiction engine ──
-  // Pass the full data object — the engine reads everything it needs internally.
   const contradiction = generateContradiction(data);
-
-  // ── Contradiction UI config based on type ──
   const contradictionStyles = {
-    contradiction: {
-      wrapper: 'bg-red-950/30 border-red-900/50',
-      glow: 'bg-red-500/10',
-      title: 'text-red-400',
-      icon: '⚠️',
-    },
-    optimism: {
-      wrapper: 'bg-amber-950/30 border-amber-900/50',
-      glow: 'bg-amber-500/10',
-      title: 'text-amber-400',
-      icon: '📈',
-    },
-    divergence: {
-      wrapper: 'bg-orange-950/30 border-orange-900/50',
-      glow: 'bg-orange-500/10',
-      title: 'text-orange-400',
-      icon: '↕️',
-    },
+    contradiction: { wrapper: 'bg-red-950/30 border-red-900/50',    glow: 'bg-red-500/10',    title: 'text-red-400',    icon: '⚠️' },
+    optimism:      { wrapper: 'bg-amber-950/30 border-amber-900/50', glow: 'bg-amber-500/10',  title: 'text-amber-400',  icon: '📈' },
+    divergence:    { wrapper: 'bg-orange-950/30 border-orange-900/50', glow: 'bg-orange-500/10', title: 'text-orange-400', icon: '↕️' },
   };
-
   const cStyle = contradiction ? contradictionStyles[contradiction.type] : null;
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-8 fade-in">
 
-      {/* Navigation */}
+      {/* ── Navigation ── */}
       <div className="flex items-center justify-between mb-2">
-        <Link to="/" className="text-gray-500 hover:text-insight-blue transition-colors flex items-center gap-2 text-sm font-medium">
+        <Link
+          to="/"
+          className="text-gray-500 hover:text-insight-blue transition-colors flex items-center gap-2 text-sm font-medium"
+        >
           <ArrowLeft size={16} /> Back to Home
         </Link>
-        <Link to={`/company/${symbol}/peers`} className="text-insight-purple hover:text-white transition-colors flex items-center gap-2 text-sm font-medium bg-insight-purple/10 px-4 py-2 rounded-full border border-insight-purple/30 shadow">
+        <Link
+          to={`/company/${symbol}/peers`}
+          className="text-insight-blue hover:text-white transition-colors flex items-center gap-2 text-sm font-medium bg-insight-blue/10 px-4 py-2 rounded-full border border-insight-blue/30 shadow"
+        >
           <Users size={16} /> Compare Peers
         </Link>
       </div>
 
-      {/* Header */}
+      {/* ── Header ── */}
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-insight-card p-6 rounded-2xl border border-gray-800 shadow relative overflow-hidden">
         <div className="relative z-10 text-left">
           <h1 className="text-3xl md:text-4xl font-bold text-gray-100">{symbolUpper}</h1>
-          <p className="text-gray-400 mt-1">
-            {business_overview?.industry_position || 'Industry Leader'}
-          </p>
+          <p className="text-gray-400 mt-1">{business_overview?.industry_position || 'Industry Leader'}</p>
         </div>
         <div className="flex items-center gap-3 relative z-10">
-          <TagBadge
-            label={getInvestmentTag(symbolUpper, industryRankings)}
-            className="text-lg px-4 py-1"
-          />
+          <TagBadge label={getInvestmentTag(symbolUpper, industryRankings)} className="text-lg px-4 py-1" />
         </div>
-        <div className="absolute top-0 right-0 w-64 h-64 bg-insight-blue/5 rounded-full blur-[80px]" />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-insight-blue/5 rounded-full blur-[80px] pointer-events-none" />
       </header>
 
-      {/* Score Cards Row */}
+      {/* ── Core AI Evaluation ── */}
       <section>
-        <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1">Core AI Evaluation</h2>
+        <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1">
+          Core AI Evaluation
+        </h2>
         <ScoreCard scores={Scores} />
       </section>
 
-      {/* Final Score + Smart Contradiction Block */}
+      {/* ── Final Score + Contradiction ── */}
       <section className="flex flex-col md:flex-row gap-6">
-
-        {/* Fundamental Score Box */}
-        <div className="bg-insight-blue/10 border border-insight-blue/30 p-6 rounded-2xl flex-1 flex flex-col items-center justify-center text-center shadow-lg">
-          <h3 className="text-insight-blue text-xs tracking-widest uppercase font-bold mb-2">Fundamental Final Score</h3>
+        <div className="bg-insight-card border border-gray-800 p-6 rounded-2xl flex-1 flex flex-col items-center justify-center text-center shadow">
+          <h3 className="text-insight-blue text-xs tracking-widest uppercase font-bold mb-2">
+            Fundamental Final Score
+          </h3>
           <p className="text-5xl font-extrabold text-white">{fundamentalFinalScore}</p>
           {zScore && (
             <p className="text-sm text-gray-400 font-medium mt-3 bg-gray-900/50 px-3 py-1 rounded-full">
@@ -768,35 +757,29 @@ export default function CompanyDashboard() {
           )}
         </div>
 
-        {/* Smart Contradiction Box — only renders if a contradiction exists */}
         {contradiction && cStyle && (
           <div className={`border p-6 rounded-2xl flex-1 flex flex-col justify-center relative overflow-hidden ${cStyle.wrapper}`}>
-            <div className={`absolute top-0 right-0 w-32 h-32 rounded-full blur-[40px] ${cStyle.glow}`} />
+            <div className={`absolute top-0 right-0 w-32 h-32 rounded-full blur-[40px] ${cStyle.glow} pointer-events-none`} />
             <h3 className={`font-bold flex items-center gap-2 mb-3 text-lg relative z-10 ${cStyle.title}`}>
-              <span className="text-2xl">{cStyle.icon}</span>
-              {contradiction.title}
+              <span className="text-2xl">{cStyle.icon}</span> {contradiction.title}
             </h3>
-            <p className="text-sm text-gray-300 leading-relaxed relative z-10">
-              {contradiction.message}
-            </p>
+            <p className="text-sm text-gray-300 leading-relaxed relative z-10">{contradiction.message}</p>
           </div>
         )}
-
-
       </section>
 
-      {/* Chart Section */}
+      {/* ── Historical Trends ── */}
       <section className="relative">
         <div className="flex items-center justify-between mb-4 px-1">
-          <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold flex items-center gap-2">Historical Trends (%)</h2>
+          <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold">Historical Trends (%)</h2>
         </div>
-        <ChartCard data={Chart_Data} />
+        <ChartCard data={chartData} />
       </section>
 
-      {/* Pros & Cons */}
+      {/* ── Pros & Cons ── */}
       {(Pros.length > 0 || Cons.length > 0) && (
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-green-950/20 border border-green-900/50 p-6 rounded-2xl shadow-inner shadow-green-900/10">
+          <div className="bg-green-950/20 border border-green-900/50 p-6 rounded-2xl">
             <h3 className="text-green-500 font-bold mb-4 flex items-center gap-2 uppercase text-xs tracking-widest">
               <span className="w-2 h-2 rounded-full bg-green-500" /> Pros
             </h3>
@@ -809,7 +792,7 @@ export default function CompanyDashboard() {
               ))}
             </ul>
           </div>
-          <div className="bg-red-950/20 border border-red-900/50 p-6 rounded-2xl shadow-inner shadow-red-900/10">
+          <div className="bg-red-950/20 border border-red-900/50 p-6 rounded-2xl">
             <h3 className="text-red-500 font-bold mb-4 flex items-center gap-2 uppercase text-xs tracking-widest">
               <span className="w-2 h-2 rounded-full bg-red-500" /> Cons
             </h3>
@@ -825,77 +808,96 @@ export default function CompanyDashboard() {
         </section>
       )}
 
-      {/* Market Snapshot */}
+      {/* ── Market Snapshot ── */}
       <section>
         <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1">Market Snapshot</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-          {recentMetrics['Price to Earning'] != null && (
-            <MetricCard label="PE Ratio" value={recentMetrics['Price to Earning']} />
-          )}
-          {recentMetrics['Return on equity'] != null && (
-            <MetricCard label="ROE" value={(recentMetrics['Return on equity'] * 100).toFixed(2) + '%'} />
-          )}
-          {recentMetrics['Return on capital employed'] != null && (
-            <MetricCard label="ROCE" value={(recentMetrics['Return on capital employed'] * 100).toFixed(2) + '%'} />
-          )}
-          {recentMetrics['Debt to equity'] != null && (
-            <MetricCard label="Debt/Equity" value={recentMetrics['Debt to equity']} />
-          )}
-          {recentMetrics['Dividend yield'] != null && (
-            <MetricCard label="Dividend Yield" value={recentMetrics['Dividend yield']} />
-          )}
-          {recentMetrics['EPS'] != null && (
-            <MetricCard label="EPS" value={recentMetrics['EPS']} />
-          )}
-          {recentMetrics['Sales growth'] != null && (
-            <MetricCard label="Sales Growth" value={(recentMetrics['Sales growth'] * 100).toFixed(2) + '%'} />
-          )}
-          {recentMetrics['Profit growth'] != null && (
-            <MetricCard label="Profit Growth" value={(recentMetrics['Profit growth'] * 100).toFixed(2) + '%'} />
-          )}
+          {recentMetrics['Price to Earning']          != null && <MetricCard label="PE Ratio"       value={recentMetrics['Price to Earning']} />}
+          {recentMetrics['Return on equity']          != null && <MetricCard label="ROE"            value={(recentMetrics['Return on equity']          * 100).toFixed(2) + '%'} />}
+          {recentMetrics['Return on capital employed']!= null && <MetricCard label="ROCE"           value={(recentMetrics['Return on capital employed'] * 100).toFixed(2) + '%'} />}
+          {recentMetrics['Debt to equity']            != null && <MetricCard label="Debt/Equity"    value={recentMetrics['Debt to equity']} />}
+          {recentMetrics['Dividend yield']            != null && <MetricCard label="Dividend Yield" value={recentMetrics['Dividend yield']} />}
+          {recentMetrics['EPS']                       != null && <MetricCard label="EPS"            value={recentMetrics['EPS']} />}
+          {recentMetrics['Sales growth']              != null && <MetricCard label="Sales Growth"   value={(recentMetrics['Sales growth']   * 100).toFixed(2) + '%'} />}
+          {recentMetrics['Profit growth']             != null && <MetricCard label="Profit Growth"  value={(recentMetrics['Profit growth']  * 100).toFixed(2) + '%'} />}
         </div>
       </section>
 
-      {/* Recent News */}
-      {recentNews.length > 0 && (
+      {/* ── Latest News ── */}
+      {newsLoading ? (
         <section>
-          <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1">Recent News</h2>
+          <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1 flex items-center gap-2">
+            <Newspaper size={14} /> Latest News
+          </h2>
           <div className="space-y-3">
-            {recentNews.map((item, idx) => (
-              <div
-                key={`${item.link || item.title || 'news'}-${idx}`}
-                className={`relative block overflow-hidden bg-insight-card p-4 rounded-xl border border-gray-800 transition-all duration-300 ${activeNewsIdx === idx ? 'shadow-lg shadow-insight-blue/20 -translate-y-0.5' : ''}`}
-              >
-                <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 bg-gradient-to-r from-insight-blue/10 via-transparent to-insight-purple/10 ${activeNewsIdx === idx ? 'opacity-100' : 'opacity-0'}`} />
-                <p className={`text-sm md:text-base font-medium leading-relaxed transition-colors duration-300 ${activeNewsIdx === idx ? 'text-insight-blue' : 'text-gray-100'}`}>
-                  {item.title || 'Untitled article'}
-                </p>
-                <div className="relative z-10 mt-3 flex items-center justify-between gap-3">
-                  <p className={`text-xs transition-colors duration-300 ${activeNewsIdx === idx ? 'text-gray-200' : 'text-gray-400'}`}>
-                    {item.publisher || 'Unknown publisher'}
-                  </p>
-                  <a
-                    href={item.link || '#'}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    onMouseEnter={() => setActiveNewsIdx(idx)}
-                    onMouseLeave={() => setActiveNewsIdx(null)}
-                    onFocus={() => setActiveNewsIdx(idx)}
-                    onBlur={() => setActiveNewsIdx(null)}
-                    className="inline-flex items-center gap-1 text-[11px] uppercase tracking-wider font-semibold text-insight-blue hover:text-white bg-insight-blue/10 hover:bg-insight-blue px-2.5 py-1 rounded-full transition-colors duration-300"
-                  >
-                    Explore news
-                    <ArrowUpRight
-                      size={13}
-                      className={`transition-transform duration-300 ${activeNewsIdx === idx ? 'translate-x-0.5 -translate-y-0.5' : ''}`}
-                    />
-                  </a>
-                </div>
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="bg-insight-card p-4 rounded-xl border border-gray-800 animate-pulse">
+                <div className="h-4 bg-gray-700 rounded w-3/4 mb-2" />
+                <div className="h-3 bg-gray-800 rounded w-full mb-3" />
+                <div className="h-3 bg-gray-800 rounded w-1/4" />
               </div>
             ))}
           </div>
         </section>
-      )}
+      ) : liveNews.length > 0 ? (
+        <section>
+          <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-4 ml-1 flex items-center gap-2">
+            <Newspaper size={14} /> Latest News
+          </h2>
+          <div className="space-y-3">
+            {liveNews.map((item, idx) => (
+              <a
+                key={idx}
+                href={item.link}
+                target="_blank"
+                rel="noreferrer noopener"
+                onMouseEnter={() => setActiveNewsIdx(idx)}
+                onMouseLeave={() => setActiveNewsIdx(null)}
+                className={`relative block overflow-hidden bg-insight-card p-4 rounded-xl border transition-all duration-200 no-underline ${
+                  activeNewsIdx === idx
+                    ? 'border-insight-blue/40 shadow-md -translate-y-0.5'
+                    : 'border-gray-800'
+                }`}
+              >
+                <p className={`text-sm md:text-base font-semibold leading-snug transition-colors duration-200 ${
+                  activeNewsIdx === idx ? 'text-insight-blue' : 'text-gray-100'
+                }`}>
+                  {item.title}
+                </p>
+                {item.summary && (
+                  <p className="text-xs text-gray-400 leading-relaxed mt-1.5 line-clamp-2">
+                    {item.summary}
+                  </p>
+                )}
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {item.publisher && (
+                      <span className={`text-xs font-medium transition-colors duration-200 ${
+                        activeNewsIdx === idx ? 'text-gray-200' : 'text-gray-500'
+                      }`}>
+                        {item.publisher}
+                      </span>
+                    )}
+                    {item.published_at && (
+                      <span className="text-[10px] text-gray-600 bg-gray-800/60 px-2 py-0.5 rounded-full border border-gray-700/50">
+                        {item.published_at}
+                      </span>
+                    )}
+                  </div>
+                  <ArrowUpRight
+                    size={14}
+                    className={`shrink-0 transition-all duration-200 ${
+                      activeNewsIdx === idx
+                        ? 'text-insight-blue translate-x-0.5 -translate-y-0.5'
+                        : 'text-gray-600'
+                    }`}
+                  />
+                </div>
+              </a>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
     </div>
   );

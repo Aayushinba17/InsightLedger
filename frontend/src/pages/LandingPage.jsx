@@ -50,18 +50,19 @@ export default function LandingPage() {
 
       {/* 1. Hero Section */}
       <div className="relative z-50 text-center max-w-3xl w-full mb-20 mt-10">
-        <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight mb-4">
-          <span className="bg-clip-text text-transparent bg-gradient-to-r from-insight-blue via-indigo-400 to-insight-purple">
+        <h1 className="text-5xl md:text-8xl font-extrabold tracking-tight mb-4">
+          <span className="bg-clip-text  text-insight-blue">
             InsightLedger+
           </span>
         </h1>
-        <p className="text-gray-400 text-lg md:text-xl mb-10 font-medium tracking-wide">
+        <p className="text-gray-400 text-lg md:text-xl mb-10 font-medium tracking-wide mt-8">
           Relative Stock Intelligence Platform
         </p>
 
-        <div className="relative z-50 flex justify-center w-full transform transition-transform duration-300 hover:scale-[1.02]">
-          <SearchBar className="shadow-xl" />
-        </div>
+       <div className="relative z-50 flex justify-center w-full transform transition-transform duration-300 hover:scale-[1.02] px-4">
+  {/* Added width (w-full max-w-3xl), height (h-14), and text size (text-lg) */}
+  <SearchBar className="w-full max-w-4xl h-16 text-lg shadow-2xl rounded-2xl" />
+</div>
       </div>
 
       {/* 2. Explore Analysis Section */}

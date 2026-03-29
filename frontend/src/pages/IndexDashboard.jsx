@@ -19,15 +19,15 @@
 //                     return;
 //                 }
 
-//                 // Map the data to fit the Table component's expected format
-//                 const formattedData = data.map(item => ({
-//                     name: item.symbol,
-//                     // Fix the path here too
-//                     year: (item.industry || item.business_overview?.industry_position || 'N/A').replace(/_/g, ' '),
-//                     status: 'Active',
-//                     score: item.fundamental_score ? parseFloat(item.fundamental_score).toFixed(2) : '0.00',
-//                     val: item.z_score ? parseFloat(item.z_score).toFixed(4) : '0.0000'
-//                 }));
+//                 // Cleaned up map: Just the raw data, no arbitrary statuses
+//                 const formattedData = data.map(item => {
+//     return {
+//         name: item.symbol,
+//         industry: (item.industry || 'N/A').replace(/_/g, ' '),
+//         score: item.fundamental_score ? parseFloat(item.fundamental_score).toFixed(2) : 'N/A',
+//         val: item.z_score ? parseFloat(item.z_score).toFixed(4) : 'N/A'
+//     };
+// });
 
 //                 // Sort by Z-Score descending (Best overall companies first)
 //                 formattedData.sort((a, b) => parseFloat(b.val) - parseFloat(a.val));
@@ -45,7 +45,7 @@
 //     if (loading) return <div className="p-10 text-center text-gray-400">Loading Index Leaderboard...</div>;
 
 //     if (!indexData || indexData.length === 0) {
-//         return <div className="p-10 text-center text-gray-400">No companies data available. Please ensure the API is connected and MongoDB has company data.</div>;
+//         return <div className="p-10 text-center text-gray-400">No companies data available.</div>;
 //     }
 
 //     return (
@@ -64,9 +64,9 @@
 //                         </div>
 //                         <h1 className="text-3xl md:text-4xl font-bold text-gray-100">Whole Index Leaderboard</h1>
 //                     </div>
+//                     {/* Cleaned up header description */}
 //                     <p className="text-gray-400 max-w-2xl">
-//                         A global comparison of all tracked companies standardized by <strong>Z-Score</strong>.
-//                         This view eliminates sector bias, showing which companies are truly performing above the market average.
+//                         A global comparison of all companies standardized by their <strong>Global Z-Score</strong> and Fundamental Score. Ranked from highest to lowest.
 //                     </p>
 //                 </div>
 //                 <div className="absolute top-0 right-0 w-96 h-96 bg-insight-blue/5 rounded-full blur-[100px]" />
@@ -82,17 +82,12 @@
 //                     </span>
 //                 </div>
 
-//                 {/* Reusing the Table component */}
-//                 {/* Note: In this view, 'Year' column represents 'Industry' and 'Value' represents 'Z-Score' */}
 //                 <Table data={indexData} />
-
-//                 {/* <p className="mt-4 text-center text-xs text-gray-600">
-//                     Note: Rankings are calculated using the Fundamental Final Score normalized across the entire index.
-//                 </p> */}
 //             </section>
 //         </div>
 //     );
 // }
+
 
 
 
@@ -117,34 +112,15 @@ export default function IndexDashboard() {
                     return;
                 }
 
-                // Map the data to fit the Table component's expected format
-                // formattedData mapping inside IndexDashboard.jsx
-const formattedData = data.map(item => {
-    const z = parseFloat(item.z_score || 0);
-    
-    let statusLabel = 'Neutral';
-    // Bright Grey for Neutral
-    let sColor = 'bg-gray-400/10 text-gray-300 border-gray-400/30'; 
-
-    if (z > 0.5) {
-        statusLabel = 'Alpha';
-        // VIBRANT GREEN
-        sColor = 'bg-green-500/20 text-green-400 border-green-500/50 shadow-[0_0_10px_rgba(34,197,94,0.1)]';
-    } else if (z < -0.5) {
-        statusLabel = 'Beta';
-        // VIBRANT RED
-        sColor = 'bg-red-500/20 text-red-400 border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.1)]';
-    }
-
-    return {
-        name: item.symbol,
-        year: (item.industry || 'N/A').replace(/_/g, ' '),
-        status: statusLabel,
-        statusColor: sColor, 
-        score: item.fundamental_score ? parseFloat(item.fundamental_score).toFixed(2) : '0.00',
-        val: item.z_score ? parseFloat(item.z_score).toFixed(4) : '0.0000'
-    };
-});
+                // Cleaned up map: Just the raw data, no arbitrary statuses
+                const formattedData = data.map(item => {
+                    return {
+                        name: item.symbol,
+                        industry: (item.industry || 'N/A').replace(/_/g, ' '),
+                        score: item.fundamental_score ? parseFloat(item.fundamental_score).toFixed(2) : 'N/A',
+                        val: item.z_score ? parseFloat(item.z_score).toFixed(4) : 'N/A'
+                    };
+                });
 
                 // Sort by Z-Score descending (Best overall companies first)
                 formattedData.sort((a, b) => parseFloat(b.val) - parseFloat(a.val));
@@ -165,6 +141,37 @@ const formattedData = data.map(item => {
         return <div className="p-10 text-center text-gray-400">No companies data available.</div>;
     }
 
+    // ==========================================
+    // ADDED: Define the columns for this specific table
+    // ==========================================
+    const indexColumns = [
+        { 
+            header: 'Company Name', 
+            accessor: 'name',
+            // Custom render function makes the symbol bold and white
+            render: (row) => <span className="font-bold text-gray-100">{row.name}</span>
+        },
+        { 
+            header: 'Industry', 
+            accessor: 'industry' 
+        },
+        { 
+            header: 'Fund. Score', 
+            accessor: 'score',
+            align: 'center',
+            // Custom render function gives it a techy monospace font
+            render: (row) => <span className="font-mono text-gray-300">{row.score}</span>
+        },
+        { 
+            header: 'Global Z-Score', 
+            accessor: 'val',
+            align: 'center',
+            // Custom render function makes the Z-score pop with insight-blue
+            render: (row) => <span className="font-mono font-bold text-insight-blue">{row.val}</span>
+        }
+    ];
+    // ==========================================
+
     return (
         <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-8 fade-in">
             <div className="flex items-center justify-between mb-2">
@@ -181,9 +188,9 @@ const formattedData = data.map(item => {
                         </div>
                         <h1 className="text-3xl md:text-4xl font-bold text-gray-100">Whole Index Leaderboard</h1>
                     </div>
+                    {/* Cleaned up header description */}
                     <p className="text-gray-400 max-w-2xl">
-                        A global comparison standardized by <strong>Z-Score</strong>. 
-                        Alpha represents market-beating fundamentals, while Neutral marks the index average.
+                        A global comparison of all companies standardized by their <strong>Global Z-Score</strong> and Fundamental Score. Ranked from highest to lowest.
                     </p>
                 </div>
                 <div className="absolute top-0 right-0 w-96 h-96 bg-insight-blue/5 rounded-full blur-[100px]" />
@@ -199,13 +206,8 @@ const formattedData = data.map(item => {
                     </span>
                 </div>
 
-                <Table data={indexData} />
-
-                {/* <div className="mt-8 bg-insight-blue/5 p-4 rounded-xl border border-insight-blue/10">
-                    <p className="text-xs text-gray-500 leading-relaxed text-center">
-                        <strong>Classification Math:</strong> <span className="text-green-400">Alpha</span> (Z {`>`} 0.5) | <span>Neutral</span> (-0.5 {`≤`} Z {`≤`} 0.5) | <span className="text-red-400">Underperform</span> (Z {`<`} -0.5)
-                    </p>
-                </div> */}
+                {/* ADDED: Pass the columns array into the Table component */}
+                <Table columns={indexColumns} data={indexData} />
             </section>
         </div>
     );

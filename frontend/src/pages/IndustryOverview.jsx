@@ -63,23 +63,37 @@ export default function IndustryOverview() {
           <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-6">Industry Scores</h2>
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorBrand" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#8b5cf6" stopOpacity={1}/>
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.8}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
-                <XAxis dataKey="industry" stroke="#666" tick={{fill: '#888', fontSize: 11}} tickLine={false} axisLine={false} />
-                <YAxis stroke="#666" tick={{fill: '#888', fontSize: 11}} tickLine={false} axisLine={false} />
+              <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                
+                {/* 1. Added clean, professional grey horizontal lines */}
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                
+                {/* 2. Removed the messy industry names at the bottom (tick={false}) */}
+                <XAxis 
+                  dataKey="industry" 
+                  tick={false} 
+                  axisLine={{ stroke: '#475569' }} 
+                  tickLine={false} 
+                />
+                
+                {/* Cleaned up Y-Axis values */}
+                <YAxis 
+                  stroke="#94a3b8" 
+                  tick={{ fill: '#94a3b8', fontSize: 11 }} 
+                  tickLine={false} 
+                  axisLine={false} 
+                />
+                
                 <Tooltip 
-                  cursor={false}
+                  cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
                   content={<CustomTooltip />}
                 />
+                
+                {/* 3. Replaced the cheap gradient with solid, professional conditional colors */}
+                {/* Note: Use "overall_score" or "final_industry_zscore" based on what your API returns */}
                 <Bar 
-                  dataKey="overall_score" 
-                  radius={[4, 4, 0, 0]}
+                  dataKey="final_industry_zscore" 
+                  radius={[4, 4, 4, 4]}
                   onClick={(entry) => {
                     if (entry && entry.industry) {
                       navigate(`/industry/${encodeURIComponent(entry.industry)}`);
@@ -87,13 +101,20 @@ export default function IndustryOverview() {
                   }}
                   style={{ cursor: 'pointer' }}
                 >
-                  {data.map((entry, index) => (
-                     <Cell 
-                       key={`cell-${index}`} 
-                       fill="url(#colorBrand)" 
-                       opacity={1 - (index / data.length) * 0.4}
-                     /> 
-                  ))}
+                  {data.map((entry, index) => {
+                    // Fallback to overall_score if final_industry_zscore is undefined
+                    const score = entry.final_industry_zscore ?? entry.overall_score;
+                    const isPositive = score >= 0;
+                    
+                    return (
+                      <Cell 
+                        key={`cell-${index}`} 
+                        /* Positive = Solid Insight Purple, Negative = Muted Professional Slate */
+                        fill='#3b82f6'
+                        opacity={0.9}
+                      /> 
+                    );
+                  })}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -108,15 +129,21 @@ export default function IndustryOverview() {
             to={`/industry/${encodeURIComponent(ind.industry)}`}
             className="group block p-6 bg-gradient-to-br from-insight-card to-[#12121e] border border-gray-800 rounded-2xl hover:border-insight-blue transition-all"
           >
-            <div className="flex justify-between items-start mb-4">
-              <h3 className="text-xl font-bold text-gray-100 group-hover:text-insight-blue transition-colors">{ind.industry.replace(/_/g, ' ')}</h3>
-              <span className="bg-insight-purple/20 text-insight-purple text-xs font-bold px-2 py-1 rounded-full border border-insight-purple/30">
-                Rank #{ind.rank || idx + 1}
+           <div className="flex justify-between items-start mb-4 gap-4">
+          <h3 className="text-xl font-bold text-gray-100 group-hover:text-insight-blue transition-colors">
+            {ind.industry.replace(/_/g, ' ')}
+          </h3>
+          
+          {/* Added shrink-0 and whitespace-nowrap to prevent the badge from squishing */}
+          <span className="shrink-0 whitespace-nowrap bg-insight-blue/20 text-insight-blue text-xs font-bold px-3 py-1 rounded-full border border-insight-blue/30">
+            Rank #{ind.rank || idx + 1}
+          </span>
+        </div>
+           <div className="flex items-center gap-2">
+              <span className="text-gray-400 text-sm">Z-Score:</span>
+              <span className="text-gray-100 font-bold text-lg">
+                {ind.final_industry_zscore !== undefined ? ind.final_industry_zscore.toFixed(4) : 'N/A'}
               </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-gray-400 text-sm">Overall Score:</span>
-              <span className="text-gray-100 font-bold text-lg">{ind.overall_score || 'N/A'}</span>
             </div>
           </Link>
         ))}

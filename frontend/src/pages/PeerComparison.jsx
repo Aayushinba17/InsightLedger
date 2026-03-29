@@ -113,11 +113,11 @@ export default function PeerComparison() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-800/40 border-b border-gray-700 font-mono">
-                <th className="px-6 py-4 text-[10px] font-bold uppercase text-gray-400 tracking-widest w-20 text-center border-r border-gray-700">Rank</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase text-gray-400 tracking-widest">Company</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase text-gray-400 tracking-widest">Status</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase text-gray-400 tracking-widest text-right">Fund. Score</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase text-gray-400 tracking-widest text-right">Z-Score</th>
+                <th className="px-6 py-4 text-[15px] font-bold uppercase text-gray-400 tracking-widest w-20 text-center border-r border-gray-700">Rank</th>
+                <th className="px-6 py-4 text-[15px] font-bold uppercase text-gray-400 tracking-widest">Company</th>
+                <th className="px-6 py-4 text-[15px] font-bold uppercase text-gray-400 tracking-widest">Status</th>
+                <th className="px-6 py-4 text-[15px] font-bold uppercase text-gray-400 tracking-widest text-right">Fund. Score</th>
+                <th className="px-6 py-4 text-[15px] font-bold uppercase text-gray-400 tracking-widest text-right">Z-Score</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
@@ -138,7 +138,7 @@ export default function PeerComparison() {
                       {comp.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-right font-mono text-insight-blue font-semibold">
+                  <td className="px-6 py-4 text-right font-mono text-insight-purple font-semibold">
                     {comp.fundamental_score?.toFixed(2)}
                   </td>
                   <td className="px-6 py-4 text-right font-mono text-gray-400 text-xs">
