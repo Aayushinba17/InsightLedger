@@ -123,14 +123,14 @@ export default function SearchBar({ className }) {
             onKeyDown={handleKeyDown}
             autoComplete="off"
           />
-          <button type="submit" className="h-full px-6 bg-gradient-to-r from-insight-blue to-insight-purple text-white font-semibold text-sm hover:opacity-90 transition-opacity">
-            Search
-          </button>
+          <button type="submit" className="h-full px-6 bg-gradient-to-r from-insight-blue via-insight-blue-soft to-insight-blue-lighter text-gray-900 font-semibold text-sm hover:opacity-90 transition-opacity">
+  Search
+</button>
         </div>
       </form>
 
       {showDropdown && filteredOptions.length > 0 && (
-        <div className="absolute z-[999] top-full mt-2 left-0 w-full bg-[#1a1a2e] border border-gray-700 rounded-xl overflow-hidden shadow-2xl">
+        <div className="absolute z-[999] top-full mt-2 left-0 w-full bg-insight-dark border border-insight-border rounded-xl overflow-hidden shadow-2xl">
           <ul className="max-h-64 overflow-y-auto w-full">
             {filteredOptions.map((opt, idx) => (
               <li

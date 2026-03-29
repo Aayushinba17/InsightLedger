@@ -12,7 +12,7 @@ import {
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
     return (
-      <div className="bg-[#111827] border border-gray-700 px-3 py-2 rounded-lg shadow">
+      <div className="bg-insight-dark border border-insight-border px-3 py-2 rounded-lg shadow">
         <p className="text-gray-300 text-xs mb-1">{label}</p>
         <p className="text-white font-semibold text-sm">
           {payload[0].value.toFixed(2)}%
@@ -42,7 +42,7 @@ export default function ChartCard({ data }) {
   ];
 
   return (
-    <div className="bg-[#0f172a] border border-gray-800 rounded-2xl p-5">
+    <div className="bg-insight-dark border border-insight-border rounded-2xl p-5">
       
       <div className="h-72 w-full">
         <ResponsiveContainer width="100%" height="100%">

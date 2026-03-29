@@ -12,7 +12,7 @@ const COLORS = [
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
     return (
-      <div className="bg-[#12121e] border border-gray-700 p-3 rounded-lg shadow-2xl">
+      <div className="bg-insight-dark border border-insight-border p-3 rounded-lg shadow-2xl">
         <p className="text-gray-100 font-bold mb-1">{(label || '').replace(/_/g, ' ')}</p>
         <p className="text-insight-purple font-semibold text-sm">
           Z-Score: <span className="text-white ml-1">{payload[0].value.toFixed(2)}</span>
@@ -59,7 +59,7 @@ export default function IndustryOverview() {
       </header>
 
       {data.length > 0 && (
-        <section className="bg-insight-card p-6 rounded-2xl border border-gray-800 mb-8 shadow-lg">
+        <section className="bg-insight-card p-6 rounded-2xl border border-insight-border mb-8 shadow-lg">
           <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-6">Industry Scores</h2>
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -100,7 +100,7 @@ export default function IndustryOverview() {
     {/* Gradient definition (subtle, premium) */}
     <defs>
       <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.9}/>
+        <stop offset="0%" stopColor="#93C5FD" stopOpacity={0.9}/>
         <stop offset="100%" stopColor="#1e3a8a" stopOpacity={0.7}/>
       </linearGradient>
     </defs>
@@ -134,7 +134,7 @@ export default function IndustryOverview() {
           <Link 
             key={idx} 
             to={`/industry/${encodeURIComponent(ind.industry)}`}
-            className="group block p-6 bg-gradient-to-br from-insight-card to-[#12121e] border border-gray-800 rounded-2xl hover:border-insight-blue transition-all"
+            className="group block p-6 bg-gradient-to-br from-insight-card to-insight-dark border border-insight-border rounded-2xl hover:border-insight-blue transition-all">
           >
            <div className="flex justify-between items-start mb-4 gap-4">
           <h3 className="text-xl font-bold text-gray-100 group-hover:text-insight-blue transition-colors">

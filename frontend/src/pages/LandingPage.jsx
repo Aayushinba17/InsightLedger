@@ -43,88 +43,89 @@ export default function LandingPage() {
 
   // The component return must be out here
   return (
-  <div className="min-h-screen flex flex-col items-center pt-24 pb-16 px-4 md:px-8 bg-[#0F1115] text-[#E6E8EB]">
+  <div className="min-h-screen flex flex-col items-center pt-24 pb-16 px-4 md:px-8 bg-insight-black text-insight-text">
 
     {/* 1. Hero Section */}
     <div className="text-center max-w-3xl w-full mb-20 mt-10">
       <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-4">
-        <span className="text-[#4FD1C5]">
-          InsightLedger+
-        </span>
-      </h1>
+  <span className="bg-gradient-to-r from-insight-blue via-insight-blue-soft to-insight-blue-lighter text-transparent bg-clip-text">
+    InsightLedger+
+  </span>
+</h1>
 
-      <p className="text-[#9CA3AF] text-lg md:text-xl mb-10 font-medium mt-6">
+      <p className="text-insight-text text-lg md:text-xl mb-10 font-medium mt-6">
         Relative Stock Intelligence Platform
       </p>
 
       <div className="flex justify-center w-full px-4">
-        <SearchBar className="w-full max-w-3xl h-14 text-base rounded-lg border border-[#232733] bg-[#171A21] focus:ring-1 focus:ring-[#4FD1C5]" />
-      </div>
+  <SearchBar className="w-full max-w-3xl h-14 text-base rounded-lg focus:ring-1 focus:ring-insight-blue-soft" />
+</div>
     </div>
 
     {/* 2. Explore Section */}
     <section className="max-w-6xl w-full mb-20">
-      <h2 className="text-xs uppercase tracking-widest text-[#9CA3AF] font-semibold mb-6 text-center">
-        Explore Analysis
-      </h2>
-
+  <h2 className="text-sm uppercase tracking-widest text-insight-muted font-semibold mb-8 text-center">
+    Explore Analysis
+  </h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
         {/* Company */}
-        <div className="bg-[#171A21] border border-[#232733] rounded-xl p-6 flex flex-col justify-between hover:border-[#4FD1C5]/40 transition">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <Building2 size={16} className="text-[#4FD1C5]" />
-              <h3 className="text-lg font-semibold">Company</h3>
-            </div>
-            <p className="text-[#9CA3AF] text-sm mb-6">
-              Analyze individual companies with qualitative and relative metrics.
-            </p>
-          </div>
+          <div className="bg-insight-card border border-insight-border rounded-xl p-6 flex flex-col justify-between hover:border-insight-blue-soft/40 transition duration-300">
+  <div>
+    <div className="flex items-center gap-2 mb-2">
+      {/* Updated icon color to a soft pastel blue to match the theme */}
+      <Building2 size={16} className="text-insight-blue" />
+      <h3 className="text-lg font-semibold text-insight-text">Company</h3>
+    </div>
+    <p className="text-insight-text text-sm mb-6">
+      Analyze individual companies with qualitative and relative metrics.
+    </p>
+  </div>
 
-          <button
-            onClick={handleFocusSearch}
-            className="text-sm font-medium text-[#4FD1C5] hover:underline"
-          >
-            Go to Search →
-          </button>
-        </div>
+  {/* Updated button with the new blue-purple gradient */}
+ <button
+  onClick={handleFocusSearch}
+  className="text-sm font-medium text-insight-blue-soft hover:underline self-start"
+>
+  Go to Search →
+</button>
+</div>
 
         {/* Index */}
-        <div className="bg-[#171A21] border border-[#232733] rounded-xl p-6 flex flex-col justify-between hover:border-[#60A5FA]/40 transition">
+        <div className="bg-insight-card border border-insight-border rounded-xl p-6 flex flex-col justify-between hover:border-insight-blue-soft/40 transition duration-300">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <Globe size={16} className="text-[#60A5FA]" />
-              <h3 className="text-lg font-semibold">Index Leaderboard</h3>
+              <Globe size={16} className="text-insight-blue" />
+              <h3 className="text-lg font-semibold text-insight-text">Index Leaderboard</h3>
             </div>
-            <p className="text-[#9CA3AF] text-sm mb-6">
+            <p className="text-insight-text text-sm mb-6">
               Compare companies globally using standardized Z-Scores.
             </p>
           </div>
 
           <Link
             to="/index"
-            className="text-sm font-medium text-[#60A5FA] hover:underline"
+            className="text-sm font-medium text-insight-blue-soft hover:underline self-start"
           >
             View Index →
           </Link>
         </div>
 
         {/* Industry */}
-        <div className="bg-[#171A21] border border-[#232733] rounded-xl p-6 flex flex-col justify-between hover:border-[#A78BFA]/40 transition">
+        <div className="bg-insight-card border border-insight-border rounded-xl p-6 flex flex-col justify-between hover:border-insight-blue-soft/40 transition duration-300">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <LayoutGrid size={16} className="text-[#A78BFA]" />
-              <h3 className="text-lg font-semibold">Industries</h3>
+              <LayoutGrid size={16} className="text-insight-blue" />
+              <h3 className="text-lg font-semibold text-insight-text">Industries</h3>
             </div>
-            <p className="text-[#9CA3AF] text-sm mb-6">
+            <p className="text-insight-text text-sm mb-6">
               Explore sector-level insights and rankings.
             </p>
           </div>
 
           <Link
             to="/industries"
-            className="text-sm font-medium text-[#A78BFA] hover:underline"
+            className="text-sm font-medium text-insight-blue-soft hover:underline self-start"
           >
             View Industries →
           </Link>
@@ -134,30 +135,29 @@ export default function LandingPage() {
     </section>
 
     {/* 3. Quick Access */}
-    <section className="max-w-5xl w-full">
-
-      <h2 className="text-xs uppercase tracking-widest text-[#9CA3AF] font-semibold mb-8 text-center">
-        Quick Access
-      </h2>
+    <section className="max-w-6xl w-full"> {/* Changed from max-w-5xl to 6xl */}
+  <h2 className="text-sm uppercase tracking-widest text-insight-muted font-semibold mb-8 text-center">
+    Quick Access
+  </h2>
 
       {/* Top Companies */}
       <div className="mb-12">
-        <h3 className="text-base font-semibold mb-4 text-[#E6E8EB]">Top Companies</h3>
+        <h3 className="text-base font-semibold mb-4 text-insight-text">Top Companies</h3>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
           {topCompanies.map((company, idx) => (
-            <Link
-              key={idx}
-              to={`/company/${company.ticker}`}
-              className="bg-[#171A21] border border-[#232733] rounded-lg p-4 text-center hover:border-[#4FD1C5]/40 transition"
-            >
-              <div className="font-mono font-semibold text-sm text-[#E6E8EB]">
-                {company.ticker}
-              </div>
-              <div className="text-xs text-[#9CA3AF] mt-1 truncate">
-                {company.industry}
-              </div>
-            </Link>
+           <Link
+  key={idx}
+  to={`/company/${company.ticker}`}
+  className="bg-insight-card border border-insight-border rounded-xl p-6 min-h-[120px] flex flex-col justify-center text-center hover:border-insight-blue/50 transition duration-300 shadow-sm hover:shadow-md"
+>
+  <div className="font-mono font-semibold text-base text-insight-text mb-2">
+    {company.ticker}
+  </div>
+  <div className="text-xs text-insight-muted line-clamp-2">
+    {company.industry}
+  </div>
+</Link>
           ))}
         </div>
       </div>
@@ -165,27 +165,27 @@ export default function LandingPage() {
       {/* Top Industries */}
       {topIndustries.length > 0 && (
         <div>
-          <h3 className="text-base font-semibold mb-4 text-[#E6E8EB]">
+          <h3 className="text-base font-semibold mb-4 text-insight-muted">
             Top Ranked Industries
           </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
             {topIndustries.map((ind, idx) => (
               <Link
                 key={idx}
                 to={`/industry/${encodeURIComponent(ind.industry)}`}
-                className="bg-[#171A21] border border-[#232733] rounded-lg p-4 hover:border-[#A78BFA]/40 transition"
+                // Reduced padding to p-4 and min-height to 90px
+                className="bg-insight-card border border-insight-border rounded-xl p-4 min-h-[90px] flex flex-col justify-between hover:border-insight-blue/50 transition duration-300 shadow-sm hover:shadow-md"
               >
-                <div className="text-sm font-semibold mb-2 line-clamp-2">
+                <div className="text-sm font-semibold mb-2 line-clamp-2 text-insight-text">
                   {ind.industry.replace(/_/g, ' ')}
                 </div>
 
-                <div className="flex justify-between text-xs text-[#9CA3AF]">
+                <div className="flex justify-between items-end text-xs text-insight-muted mt-auto">
                   <span>
-                    Score: <span className="text-[#E6E8EB]">{ind.overall_score}</span>
-                  </span>
-                  <span className="font-mono text-[#A78BFA]">
-                    #{ind.rank}
+                    Z-Score: <span className="text-insight-blue-soft font-mono font-medium ml-1">
+                      {ind.final_industry_zscore !== undefined ? ind.final_industry_zscore.toFixed(4) : 'N/A'}
+                    </span>
                   </span>
                 </div>
               </Link>

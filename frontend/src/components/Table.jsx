@@ -9,7 +9,7 @@ export default function Table({ columns, data, className, onRowClick }) {
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm text-gray-300">
           
-          <thead className="bg-[#1a1a2e] text-xs uppercase text-gray-400 border-b border-gray-800">
+          <thead className="bg-insight-dark text-xs uppercase text-gray-400 border-b border-gray-800">
             <tr>
               {/* Dynamically generate headers based on the columns prop */}
               {columns.map((col, idx) => (

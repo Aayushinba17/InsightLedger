@@ -1,272 +1,91 @@
-// import React, { useState } from 'react';
-
-// const SCORE_META = {
-//   BQ: {
-//     label: 'Business Quality',
-//     description: 'Moat, pricing power, scalability',
-//     borderColor: 'border-insight-blue/60',
-//     bgColor: 'bg-insight-blue/20',
-//     textColor: 'text-insight-blue',
-//   },
-//   RP: {
-//     label: 'Return Profile',
-//     description: 'ROE, ROCE, capital efficiency',
-//     borderColor: 'border-insight-blue/60',
-//     bgColor: 'bg-insight-blue/20',
-//     textColor: 'text-insight-blue',
-//   },
-//   CY: {
-//     label: 'Cyclicality',
-//     description: 'Revenue stability, demand sensitivity',
-//     borderColor: 'border-insight-blue/60',
-//     bgColor: 'bg-insight-blue/20',
-//     textColor: 'text-insight-blue',
-//   },
-//   BG: {
-//     label: 'Governance',
-//     description: 'Management quality, transparency',
-//     borderColor: 'border-insight-blue/60',
-//     bgColor: 'bg-insight-blue/20',
-//     textColor: 'text-insight-blue',
-//   },
-// };
-
-// // /**
-// //  * Returns a label based on the numeric score (out of 10).
-// //  */
-// // function scoreLabel(val) {
-// //   if (val == null) return '—';
-// //   if (val >= 8) return 'Excellent';
-// //   if (val >= 6) return 'Good';
-// //   if (val >= 4) return 'Moderate';
-// //   return 'Weak';
-// // }
-
-// // /**
-// //  * A thin horizontal bar representing score / 10.
-// //  */
-// // function ScoreBar({ val, accentColor }) {
-// //   const pct = val != null ? Math.min(Math.max((val / 10) * 100, 0), 100) : 0;
-// //   return (
-// //     <div className="w-full h-1 rounded-full bg-gray-800 overflow-hidden mt-3">
-// //       <div
-// //         className="h-full rounded-full transition-all duration-500"
-// //         style={{ width: `${pct}%`, backgroundColor: accentColor }}
-// //       />
-// //     </div>
-// //   );
-// // }
-
-// /**
-//  * Single score card — shows value, label, bar, and collapsible reasoning points.
-//  */
-// function ScoreItem({ scoreKey, score }) {
-//   const [open, setOpen] = useState(false);
-//   const meta = SCORE_META[scoreKey];
-//   const { val, justification } = score;
-//   const hasPoints = Array.isArray(justification) && justification.length > 0;
-
-//   return (
-//     <div
-//       className={`rounded-xl border ${meta.borderColor} ${meta.bgColor} p-5 flex flex-col gap-3 transition-shadow duration-200 hover:shadow-md`}
-//     >
-//       {/* Header row */}
-//       <div className="flex items-start justify-between gap-2">
-//         <div>
-//           <p className={`text-xs font-bold uppercase tracking-widest ${meta.textColor}`}>
-//             {scoreKey}
-//           </p>
-//           <p className="text-gray-300 font-semibold text-sm mt-0.5">{meta.label}</p>
-//           <p className="text-gray-500 text-xs mt-0.5">{meta.description}</p>
-//         </div>
-
-//         {/* Score value badge */}
-//         <div className="shrink-0 text-right">
-//           <p className="text-2xl font-extrabold text-gray-100 leading-none">
-//             {val != null ? val : '—'}
-//           </p>
-//           {/* <p className={`text-xs font-medium mt-0.5 ${meta.textColor}`}>
-//             {scoreLabel(val)}
-//           </p> */}
-//         </div>
-//       </div>
-
-//       {/* Score bar
-//       <ScoreBar val={val} accentColor={meta.accentColor} /> */}
-
-//       {/* Collapsible reasoning points */}
-//       {hasPoints && (
-//         <div>
-//           <button
-//             onClick={() => setOpen(o => !o)}
-//             className={`text-xs font-medium ${meta.textColor} hover:opacity-80 transition-opacity flex items-center gap-1 mt-1`}
-//           >
-//             {open ? '▲ Hide reasoning' : '▼ View reasoning'}
-//           </button>
-//           {open && (
-//             <ul className="mt-2 space-y-2">
-//               {justification.map((point, idx) => (
-//                 <li key={idx} className="flex items-start gap-2 text-xs text-gray-400 leading-relaxed">
-//                   <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${meta.dotColor}`} />
-//                   {point}
-//                 </li>
-//               ))}
-//             </ul>
-//           )}
-//         </div>
-//       )}
-//     </div>
-//   );
-// }
-
-// /**
-//  * ScoreCard — renders a 2×2 grid of BQ, RP, CY, BG score cards.
-//  */
-// export default function ScoreCard({ scores }) {
-//   if (!scores) return null;
-
-//   return (
-//     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-//       {Object.entries(scores).map(([key, score]) =>
-//         SCORE_META[key] ? (
-//           <ScoreItem key={key} scoreKey={key} score={score} />
-//         ) : null
-//       )}
-//     </div>
-//   );
-// }
-
-
-
-/**
- * ScoreCard.jsx
- *
- * FINAL VERSION (March 2026)
- * • Uses the exact score card design you provided (compact header with small BQ/RP/CY/BG label,
- *   description, and score value).
- * • All 4 cards are uniformly styled with insight-blue theme (as requested earlier).
- * • Coloured accent bar completely removed.
- * • Dropdown changed to the overlapping absolute style you requested:
- *   - Trigger button at the bottom (no card expansion / no layout shift).
- *   - Dropdown appears below the card as a separate floating panel.
- *   - Uses the same visual style as the last inline version you liked.
- */
-
 import React, { useState } from 'react';
+import { cn } from '../utils/cn';
 
-const SCORE_META = {
-  BQ: {
-    label: 'Business Quality',
-    description: 'Moat, pricing power, scalability',
-    borderColor: 'border-insight-blue/60',
-    bgColor: 'bg-insight-blue/20',
-    textColor: 'text-insight-blue',
-  },
-  RP: {
-    label: 'Return Profile',
-    description: 'ROE, ROCE, capital efficiency',
-    borderColor: 'border-insight-blue/60',
-    bgColor: 'bg-insight-blue/20',
-    textColor: 'text-insight-blue',
-  },
-  CY: {
-    label: 'Cyclicality',
-    description: 'Revenue stability, demand sensitivity',
-    borderColor: 'border-insight-blue/60',
-    bgColor: 'bg-insight-blue/20',
-    textColor: 'text-insight-blue',
-  },
-  BG: {
-    label: 'Governance',
-    description: 'Management quality, transparency',
-    borderColor: 'border-insight-blue/60',
-    bgColor: 'bg-insight-blue/20',
-    textColor: 'text-insight-blue',
-  },
-};
+export default function ScoreCard({ scores, className }) {
+  const [expandedKey, setExpandedKey] = useState(null);
 
-/**
- * Single score card with overlapping dropdown reasoning.
- */
-function ScoreItem({ scoreKey, score }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const meta = SCORE_META[scoreKey];
-  const { val, justification } = score;
-  const hasPoints = Array.isArray(justification) && justification.length > 0;
+  if (!scores) return null;
 
-  const toggleExpanded = () => {
-    setIsExpanded((prev) => !prev);
+  const metrics = [
+    { key: 'BQ', label: 'Business Quality', desc: 'Moat, pricing power, scalability' },
+    { key: 'RP', label: 'Return Profile', desc: 'ROE, ROCE, capital efficiency' },
+    { key: 'CY', label: 'Cyclicality', desc: 'Revenue stability, demand sensitivity' },
+    { key: 'BG', label: 'Governance', desc: 'Management quality, transparency' }
+  ];
+
+  const toggleExpand = (key) => {
+    setExpandedKey(prev => prev === key ? null : key);
   };
 
   return (
-    <div
-      className={`rounded-2xl border ${meta.borderColor} ${meta.bgColor} p-6 relative overflow-visible shadow transition-shadow hover:shadow-md`}
-    >
-      {/* Header row */}
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className={`text-xs font-bold uppercase tracking-widest ${meta.textColor}`}>
-            {scoreKey}
-          </p>
-          <p className="text-gray-300 font-semibold text-sm mt-0.5">{meta.label}</p>
-          <p className="text-gray-500 text-xs mt-0.5">{meta.description}</p>
-        </div>
+    <div className={cn("grid grid-cols-1 md:grid-cols-2 gap-6 items-start", className)}>
+      {metrics.map(m => {
+        const data = scores[m.key];
+        if (!data) return null;
 
-        {/* Score value */}
-        <div className="shrink-0 text-right">
-          <p className={`text-3xl font-extrabold ${meta.textColor} leading-none`}>
-            {val != null ? val : '—'}
-          </p>
-        </div>
-      </div>
+        const isExpanded = expandedKey === m.key;
+        const reasoningPoints = Array.isArray(data.justification) ? data.justification : [];
 
-      {/* Dropdown trigger – always visible at bottom */}
-      {hasPoints && (
-        <button
-          onClick={toggleExpanded}
-          className={`flex w-full items-center justify-between ${meta.textColor} hover:text-white font-medium text-sm border-t border-gray-700/50 pt-4 mt-6 transition-colors`}
-        >
-          <span>View reasoning</span>
-          <span
-            className={`inline-block text-lg transition-transform duration-200 ${
-              isExpanded ? 'rotate-180' : ''
-            }`}
+        return (
+          <div
+            key={m.key}
+            // CHANGED: Removed overflow-hidden so the dropdown can float outside!
+            className="bg-insight-card border border-insight-border rounded-2xl p-6 transition-all duration-300 hover:border-insight-blue/40 shadow-sm relative overflow-visible h-fit flex flex-col"
           >
-            ▼
-          </span>
-        </button>
-      )}
+            {/* Header row */}
+            <div className="flex justify-between items-start mb-2">
+              <div>
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="bg-insight-blue/10 text-insight-blue border border-insight-blue/20 px-2 py-0.5 rounded text-xs font-black tracking-wider shadow-inner">
+                    {m.key}
+                  </span>
+                  <h3 className="text-lg font-bold text-insight-text tracking-tight">{m.label}</h3>
+                </div>
+                <p className="text-xs text-insight-muted font-medium">{m.desc}</p>
+              </div>
+              
+              {/* High contrast score */}
+              <div className="text-5xl font-black text-white tracking-tighter drop-shadow-md">
+                {data.val !== null && data.val !== undefined ? data.val : '—'}
+              </div>
+            </div>
 
-      {/* Overlapping dropdown – attached to lower box, no layout shift */}
-      {isExpanded && hasPoints && (
-        <div className="absolute left-0 right-0 top-full mt-3 z-30 bg-insight-card border border-gray-800 rounded-2xl p-6 shadow-2xl">
-          <ul className="space-y-3 text-sm text-gray-300">
-            {justification.map((point, idx) => (
-              <li key={idx} className="flex items-start gap-3">
-                <span className="text-insight-blue text-base mt-px">•</span>
-                <span>{point}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
+            {/* Toggle button */}
+            <button
+              onClick={() => toggleExpand(m.key)}
+              className="flex items-center gap-2 text-xs font-semibold text-insight-muted hover:text-insight-blue transition-colors mt-6 w-full text-left uppercase tracking-widest"
+            >
+              {isExpanded ? 'Hide Reasoning' : 'View Reasoning'}
+              <span className={`transition-transform duration-300 text-[10px] ${isExpanded ? 'rotate-180 text-insight-blue' : ''}`}>
+                ▼
+              </span>
+            </button>
 
-/**
- * ScoreCard — renders a 2×2 grid of the 4 score cards.
- */
-export default function ScoreCard({ scores }) {
-  if (!scores) return null;
-
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-      {Object.entries(scores).map(([key, score]) =>
-        SCORE_META[key] ? (
-          <ScoreItem key={key} scoreKey={key} score={score} />
-        ) : null
-      )}
+            {/* TRUE DROPDOWN FIX: 
+              This is now absolutely positioned (absolute left-0 right-0 top-full mt-2).
+              It floats cleanly OVER the rest of the page with a sleek shadow. 
+              No weird empty left gaps!
+            */}
+            {isExpanded && (
+              <div className="absolute left-0 right-0 top-full mt-2 z-50 bg-insight-deep border border-insight-border rounded-xl shadow-2xl p-5 shadow-black/60 animate-in fade-in slide-in-from-top-2 duration-200">
+                {reasoningPoints.length > 0 ? (
+                  <ul className="text-sm text-insight-text leading-relaxed space-y-2.5 list-none m-0 p-0">
+                    {reasoningPoints.map((point, idx) => (
+                      <li key={idx} className="flex items-start gap-3">
+                        <span className="text-insight-blue text-lg leading-none shrink-0 drop-shadow-md mt-0.5">•</span>
+                        <span>{point}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-insight-muted italic m-0">No reasoning points available.</p>
+                )}
+              </div>
+            )}
+            
+          </div>
+        );
+      })}
     </div>
   );
 }

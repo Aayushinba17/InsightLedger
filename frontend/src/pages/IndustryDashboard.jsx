@@ -182,7 +182,7 @@ const formatZ = (val) => {
 />
                 <Bar dataKey="value" radius={[4, 4, 4, 4]} barSize={40}>
                   {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.value > 0 ? '#3b82f6' : '#ef4444'} opacity={0.8} />
+                    <Cell key={`cell-${index}`} fill={entry.value > 0 ? '#93C5FD' : '#ef4444'} opacity={0.8} />
                   ))}
                 </Bar>
               </BarChart>
@@ -192,7 +192,7 @@ const formatZ = (val) => {
 
 {/* TOP PERFORMING COMPANY SPOTLIGHT (Insight-Purple Theme & Centered) */}
         {topCompany && (
-          <section className="bg-[#12121e] border border-insight-purple/20 rounded-xl p-6 flex flex-col justify-between shadow-md hover:border-insight-purple/40 transition-colors">
+          <section className="bg-insight-dark border border-insight-purple/20 rounded-xl p-6 flex flex-col justify-between shadow-md hover:border-insight-purple/40 transition-colors">
             
             {/* Center-aligned Header Section */}
             <div className="mb-6 flex flex-col items-center text-center">
@@ -218,7 +218,7 @@ const formatZ = (val) => {
 
             <div className="mb-6">
               {/* Left-aligned Rationale Box for easy reading */}
-              <div className="bg-[#0a0a0f] rounded-lg p-4 border border-insight-purple/10">
+              <div className="bg-insight-deep rounded-lg p-4 border border-insight-purple/10">
                  <p className="text-sm text-gray-300 leading-relaxed text-left">
                    <span className="text-insight-purple/80 font-black uppercase text-[10px] tracking-[0.2em] block mb-1.5">Rationale</span>
                    {dynamicReason}
@@ -240,7 +240,7 @@ const formatZ = (val) => {
         )}
       </div>
 
-      <section className="bg-insight-card p-6 rounded-xl border border-gray-800/60 shadow-sm">
+      {/* <section className="bg-insight-card p-6 rounded-xl border border-gray-800/60 shadow-sm">
         <h2 className="text-sm uppercase tracking-widest text-gray-300 font-bold mb-5 flex items-center gap-2">
           <Info size={16} className="text-insight-purple" />
           Understanding the Metrics
@@ -289,7 +289,7 @@ const formatZ = (val) => {
             </p>
           </div>
         </div>
-      </section>
+      </section> */}
     </div>
   );
 }
