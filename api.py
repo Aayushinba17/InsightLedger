@@ -12,7 +12,8 @@ from datetime import datetime, timezone
 load_dotenv()
 
 MONGO_URI = os.getenv("MONGO_URI")
-print(f"🔍 DEBUG: MONGO_URI loaded = {MONGO_URI[:100]}..." if MONGO_URI else "❌ MONGO_URI NOT FOUND in .env")
+print(
+    f"🔍 DEBUG: MONGO_URI loaded = {MONGO_URI[:100]}..." if MONGO_URI else "❌ MONGO_URI NOT FOUND in .env")
 
 if not MONGO_URI:
     raise ValueError("MONGO_URI is missing in .env file! Check your root .env")
@@ -31,7 +32,8 @@ app = FastAPI(title="Insight Ledger API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:5173",
+                   "http://127.0.0.1:5173", "https://insightledger.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,6 +42,7 @@ app.add_middleware(
 # ============================
 # NEWS PARSER — handles all known yfinance formats
 # ============================
+
 
 def parse_news_item(item: dict) -> dict | None:
     """
@@ -64,16 +67,16 @@ def parse_news_item(item: dict) -> dict | None:
 
     Returns None if we can't extract at minimum a title + link.
     """
-    title       = None
-    link        = None
-    publisher   = None
-    summary     = None
+    title = None
+    link = None
+    publisher = None
+    summary = None
     published_str = None
 
     # ── Shape A: content dict ──────────────────────────────────────────────
     content = item.get("content") if isinstance(item, dict) else None
     if content and isinstance(content, dict):
-        title   = content.get("title") or content.get("headline")
+        title = content.get("title") or content.get("headline")
         summary = content.get("summary") or content.get("description")
 
         canonical = content.get("canonicalUrl") or content.get("url") or {}
@@ -109,7 +112,8 @@ def parse_news_item(item: dict) -> dict | None:
         ts = item.get("providerPublishTime") or item.get("publishedAt")
         if ts:
             try:
-                published_str = datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime("%d %b %Y")
+                published_str = datetime.fromtimestamp(
+                    int(ts), tz=timezone.utc).strftime("%d %b %Y")
             except Exception:
                 try:
                     # Sometimes it's already an ISO string
@@ -168,54 +172,69 @@ def fetch_news_for_symbol(sym: str) -> list[dict]:
 def read_root():
     return {"status": "API is running!", "database": "Connected to Atlas"}
 
+
 @app.get("/api/companies")
 def get_all_companies():
     companies = list(db.companies.find({}, {"_id": 0, "symbol": 1}))
     return [c["symbol"] for c in companies if "symbol" in c]
 
+
 @app.get("/api/company/{symbol}")
 def get_company(symbol: str):
     data = db.companies.find_one({"symbol": symbol.upper()}, {"_id": 0})
     if not data:
-        raise HTTPException(status_code=404, detail=f"Company {symbol} not found")
+        raise HTTPException(
+            status_code=404, detail=f"Company {symbol} not found")
     return data
+
 
 @app.get("/api/sectors")
 def get_all_sectors():
     return list(db.sector_evaluations.find({}, {"_id": 0}))
 
+
 @app.get("/api/sector/{industry_name}")
 def get_sector_by_name(industry_name: str):
-    data = db.sector_evaluations.find_one({"industry": industry_name}, {"_id": 0})
+    data = db.sector_evaluations.find_one(
+        {"industry": industry_name}, {"_id": 0})
     if not data:
         raise HTTPException(status_code=404, detail="Sector not found")
     return data
+
 
 @app.get("/api/industries")
 def get_all_industries():
     return list(db.industry_evaluations.find({"_type": {"$ne": "industry_summary"}}, {"_id": 0}))
 
+
 @app.get("/api/industry-summary")
 def get_industry_summary():
-    data = db.industry_evaluations.find_one({"_type": "industry_summary"}, {"_id": 0})
+    data = db.industry_evaluations.find_one(
+        {"_type": "industry_summary"}, {"_id": 0})
     if not data:
-        raise HTTPException(status_code=404, detail="Industry summary not found")
+        raise HTTPException(
+            status_code=404, detail="Industry summary not found")
     return data
+
 
 @app.get("/api/industry/{industry_name}")
 def get_industry_by_name(industry_name: str):
-    data = db.industry_evaluations.find_one({"industry": industry_name}, {"_id": 0})
+    data = db.industry_evaluations.find_one(
+        {"industry": industry_name}, {"_id": 0})
     if not data:
         raise HTTPException(status_code=404, detail="Industry not found")
     return data
+
 
 @app.get("/api/index-scores")
 def get_all_index_scores():
     companies = list(db.companies.find(
         {},
-        {"_id": 0, "symbol": 1, "fundamental_score": 1, "z_score": 1, "business_overview": 1, "industry": 1}
+        {"_id": 0, "symbol": 1, "fundamental_score": 1,
+            "z_score": 1, "business_overview": 1, "industry": 1}
     ))
     return companies
+
 
 @app.get("/api/top-performers")
 def get_top_performers():
@@ -228,6 +247,7 @@ def get_top_performers():
 # ============================
 # LIVE NEWS ENDPOINT
 # ============================
+
 
 @app.get("/api/news/{symbol}")
 def get_live_news(symbol: str):
