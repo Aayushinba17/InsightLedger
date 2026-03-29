@@ -63,61 +63,68 @@ export default function IndustryOverview() {
           <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-6">Industry Scores</h2>
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                
-                {/* 1. Added clean, professional grey horizontal lines */}
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                
-                {/* 2. Removed the messy industry names at the bottom (tick={false}) */}
-                <XAxis 
-                  dataKey="industry" 
-                  tick={false} 
-                  axisLine={{ stroke: '#475569' }} 
-                  tickLine={false} 
-                />
-                
-                {/* Cleaned up Y-Axis values */}
-                <YAxis 
-                  stroke="#94a3b8" 
-                  tick={{ fill: '#94a3b8', fontSize: 11 }} 
-                  tickLine={false} 
-                  axisLine={false} 
-                />
-                
-                <Tooltip 
-                  cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
-                  content={<CustomTooltip />}
-                />
-                
-                {/* 3. Replaced the cheap gradient with solid, professional conditional colors */}
-                {/* Note: Use "overall_score" or "final_industry_zscore" based on what your API returns */}
-                <Bar 
-                  dataKey="final_industry_zscore" 
-                  radius={[4, 4, 4, 4]}
-                  onClick={(entry) => {
-                    if (entry && entry.industry) {
-                      navigate(`/industry/${encodeURIComponent(entry.industry)}`);
-                    }
-                  }}
-                  style={{ cursor: 'pointer' }}
-                >
-                  {data.map((entry, index) => {
-                    // Fallback to overall_score if final_industry_zscore is undefined
-                    const score = entry.final_industry_zscore ?? entry.overall_score;
-                    const isPositive = score >= 0;
-                    
-                    return (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        /* Positive = Solid Insight Purple, Negative = Muted Professional Slate */
-                        fill='#3b82f6'
-                        opacity={0.9}
-                      /> 
-                    );
-                  })}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+  <BarChart 
+    data={data} 
+    margin={{ top: 20, right: 20, left: -10, bottom: 10 }}
+  >
+
+    {/* Softer grid */}
+    <CartesianGrid 
+      strokeDasharray="2 4" 
+      stroke="#1f2937" 
+      vertical={false} 
+    />
+
+    {/* Clean X axis */}
+    <XAxis 
+      dataKey="industry"
+      tick={false}
+      axisLine={{ stroke: '#374151' }}
+      tickLine={false}
+    />
+
+    {/* Clean Y axis */}
+    <YAxis 
+      stroke="#9ca3af"
+      tick={{ fill: '#9ca3af', fontSize: 11 }}
+      tickLine={false}
+      axisLine={false}
+    />
+
+    {/* Better tooltip */}
+    <Tooltip
+      cursor={{ fill: 'rgba(59, 130, 246, 0.08)' }}
+      content={<CustomTooltip />}
+    />
+
+    {/* Gradient definition (subtle, premium) */}
+    <defs>
+      <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.9}/>
+        <stop offset="100%" stopColor="#1e3a8a" stopOpacity={0.7}/>
+      </linearGradient>
+    </defs>
+
+    <Bar
+      dataKey="final_industry_zscore"
+      radius={[8, 8, 4, 4]}   // smoother top rounding
+      barSize={28}            // consistent width
+      onClick={(entry) => {
+        if (entry && entry.industry) {
+          navigate(`/industry/${encodeURIComponent(entry.industry)}`);
+        }
+      }}
+      style={{ cursor: 'pointer' }}
+    >
+      {data.map((entry, index) => (
+        <Cell 
+          key={`cell-${index}`} 
+          fill="url(#barGradient)" 
+        />
+      ))}
+    </Bar>
+  </BarChart>
+</ResponsiveContainer>
           </div>
         </section>
       )}
