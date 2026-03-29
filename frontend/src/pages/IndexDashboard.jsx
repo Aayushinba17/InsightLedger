@@ -112,15 +112,22 @@ export default function IndexDashboard() {
                     return;
                 }
 
-                // Cleaned up map: Just the raw data, no arbitrary statuses
-                const formattedData = data.map(item => {
-                    return {
-                        name: item.symbol,
-                        industry: (item.industry || 'N/A').replace(/_/g, ' '),
-                        score: item.fundamental_score ? parseFloat(item.fundamental_score).toFixed(2) : 'N/A',
-                        val: item.z_score ? parseFloat(item.z_score).toFixed(4) : 'N/A'
-                    };
-                });
+
+                const formattedData = data
+    .filter(item => {
+        const val = parseFloat(item.fundamental_score);
+        return !isNaN(val) && val !== 0;
+    })
+    .map(item => {
+        return {
+            name: item.symbol,
+            industry: (item.industry || 'N/A').replace(/_/g, ' '),
+            score: parseFloat(item.fundamental_score).toFixed(2),
+            val: !isNaN(parseFloat(item.z_score)) 
+                ? parseFloat(item.z_score).toFixed(4) 
+                : 'N/A'
+        };
+    });
 
                 // Sort by Z-Score descending (Best overall companies first)
                 formattedData.sort((a, b) => parseFloat(b.val) - parseFloat(a.val));
