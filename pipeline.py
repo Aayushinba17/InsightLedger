@@ -15,7 +15,7 @@ from unzip import run_unzip_cleanup
 from quantitative_fetcher import fetch_yfinance_metrics
 from scraper.ai_extractor import run_ai_extraction
 from scraper.merge_data import merge_folders
-from scraper.peer_evaluator import run_scripted_peer_evaluation
+from scraper.peer_evaluator import run_global_standardized_peer_evaluation
 from scraper.industry_evaluator import run_industry_evaluation
 import db_uploader
 
@@ -264,7 +264,7 @@ def run_pipeline(manual_symbol=None):
     print("PHASE 2: Sector Peer Evaluation (Python Math Engine)")
     print("=" * 60)
 
-    phase2_ok = run_scripted_peer_evaluation()
+    phase2_ok = run_global_standardized_peer_evaluation()
 
     if not phase2_ok:
         print("\nPhase 2 failed. Check your individual JSON files for formatting errors.")

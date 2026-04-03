@@ -8,11 +8,17 @@ export default {
     extend: {
       colors: {
         insight: {
-          black: '#0a0a0a',
-          blue: '#3b82f6',
-          purple: '#8b5cf6',
-          dark: '#121212',
-          card: '#1e1e1e',
+          black: '#0F1115',
+          card: '#171A21',
+          border: '#232733',
+          text: '#E6E8EB',
+          muted: '#9CA3AF',
+          blue: '#93C5FD',
+          'blue-soft': '#A5B4FC',
+          'blue-lighter': '#D8B4FE',
+          purple: '#8B5CF6',
+          dark: '#12121E',
+          deep: '#0A0A0F',
         }
       }
     },

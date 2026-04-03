@@ -2,71 +2,39 @@
   "type": "object",
   "required": [
     "industry",
-    "companies_count",
-    "rankings"
+    "best_performing_company",
+    "best_company_justification",
+    "company_justifications"
   ],
   "properties": {
     "industry": {
       "type": "string"
     },
-    "companies_count": {
-      "type": "integer"
+    "best_performing_company": {
+      "type": "string",
+      "description": "The ticker symbol of the company with the strongest fundamentals in this group."
     },
-    "rankings": {
-      "type": "object",
-      "required": [
-        "fundamental_investor",
-        "value_investor",
-        "growth_investor",
-        "safety_investor"
-      ],
-      "properties": {
-        "fundamental_investor": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/company_rank"
+    "best_company_justification": {
+      "type": "string",
+      "description": "3-4 sentences explaining exactly why this is the best company based on the provided data."
+    },
+    "company_justifications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["company", "tier", "justification"],
+        "properties": {
+          "company": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "string",
+            "enum": ["Market Leader", "Strong Challenger", "Average Follower", "Vulnerable Laggard"]
+          },
+          "justification": {
+            "type": "string",
+            "description": "1-2 sentences justifying this company's tier within the industry."
           }
-        },
-        "value_investor": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/company_rank"
-          }
-        },
-        "growth_investor": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/company_rank"
-          }
-        },
-        "safety_investor": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/company_rank"
-          }
-        }
-      }
-    }
-  },
-  "definitions": {
-    "company_rank": {
-      "type": "object",
-      "required": [
-        "company",
-        "score",
-        "rank"
-      ],
-      "properties": {
-        "company": {
-          "type": "string"
-        },
-        "score": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
-        },
-        "rank": {
-          "type": "integer"
         }
       }
     }

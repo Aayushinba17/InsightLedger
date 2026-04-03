@@ -12,11 +12,12 @@ const COLORS = [
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
     return (
-      <div className="bg-[#12121e] border border-gray-700 p-3 rounded-lg shadow-2xl">
+      <div className="bg-insight-dark border border-insight-border p-3 rounded-lg shadow-2xl">
         <p className="text-gray-100 font-bold mb-1">{(label || '').replace(/_/g, ' ')}</p>
         <p className="text-insight-purple font-semibold text-sm">
-          Overall Score: <span className="text-white ml-1">{payload[0].value}</span>
+          Z-Score: <span className="text-white ml-1">{payload[0].value.toFixed(2)}</span>
         </p>
+        <p className="text-gray-400 text-xs mt-1">Range: -3 (weak) to +3 (strong)</p>
       </div>
     );
   }
@@ -54,48 +55,76 @@ export default function IndustryOverview() {
 
       <header className="mb-8">
         <h1 className="text-3xl md:text-4xl font-bold text-gray-100 mb-2">Industry Overview</h1>
-        <p className="text-gray-400">Ranking and performance summary of all industries</p>
+        <p className="text-gray-400">Ranking and performance summary of all industries (Z-Score: -3 weak to +3 strong)</p>
       </header>
 
       {data.length > 0 && (
-        <section className="bg-insight-card p-6 rounded-2xl border border-gray-800 mb-8 shadow-lg">
+        <section className="bg-insight-card p-6 rounded-2xl border border-insight-border mb-8 shadow-lg">
           <h2 className="text-sm uppercase tracking-widest text-gray-500 font-bold mb-6">Industry Scores</h2>
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorBrand" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#8b5cf6" stopOpacity={1}/>
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.8}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
-                <XAxis dataKey="industry" stroke="#666" tick={{fill: '#888', fontSize: 11}} tickLine={false} axisLine={false} />
-                <YAxis stroke="#666" tick={{fill: '#888', fontSize: 11}} tickLine={false} axisLine={false} />
-                <Tooltip 
-                  cursor={{fill: '#2a2a3a'}}
-                  content={<CustomTooltip />}
-                />
-                <Bar 
-                  dataKey="overall_score" 
-                  radius={[4, 4, 0, 0]}
-                  onClick={(entry) => {
-                    if (entry && entry.industry) {
-                      navigate(`/industry/${encodeURIComponent(entry.industry)}`);
-                    }
-                  }}
-                  style={{ cursor: 'pointer' }}
-                >
-                  {data.map((entry, index) => (
-                     <Cell 
-                       key={`cell-${index}`} 
-                       fill="url(#colorBrand)" 
-                       opacity={1 - (index / data.length) * 0.4}
-                     /> 
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+  <BarChart 
+    data={data} 
+    margin={{ top: 20, right: 20, left: -10, bottom: 10 }}
+  >
+
+    {/* Softer grid */}
+    <CartesianGrid 
+      strokeDasharray="2 4" 
+      stroke="#1f2937" 
+      vertical={false} 
+    />
+
+    {/* Clean X axis */}
+    <XAxis 
+      dataKey="industry"
+      tick={false}
+      axisLine={{ stroke: '#374151' }}
+      tickLine={false}
+    />
+
+    {/* Clean Y axis */}
+    <YAxis 
+      stroke="#9ca3af"
+      tick={{ fill: '#9ca3af', fontSize: 11 }}
+      tickLine={false}
+      axisLine={false}
+    />
+
+    {/* Better tooltip */}
+    <Tooltip
+      cursor={{ fill: 'rgba(59, 130, 246, 0.08)' }}
+      content={<CustomTooltip />}
+    />
+
+    {/* Gradient definition (subtle, premium) */}
+    <defs>
+      <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#93C5FD" stopOpacity={0.9}/>
+        <stop offset="100%" stopColor="#1e3a8a" stopOpacity={0.7}/>
+      </linearGradient>
+    </defs>
+
+    <Bar
+      dataKey="final_industry_zscore"
+      radius={[8, 8, 4, 4]}   // smoother top rounding
+      barSize={28}            // consistent width
+      onClick={(entry) => {
+        if (entry && entry.industry) {
+          navigate(`/industry/${encodeURIComponent(entry.industry)}`);
+        }
+      }}
+      style={{ cursor: 'pointer' }}
+    >
+      {data.map((entry, index) => (
+        <Cell 
+          key={`cell-${index}`} 
+          fill="url(#barGradient)" 
+        />
+      ))}
+    </Bar>
+  </BarChart>
+</ResponsiveContainer>
           </div>
         </section>
       )}
@@ -105,17 +134,23 @@ export default function IndustryOverview() {
           <Link 
             key={idx} 
             to={`/industry/${encodeURIComponent(ind.industry)}`}
-            className="group block p-6 bg-gradient-to-br from-insight-card to-[#12121e] border border-gray-800 rounded-2xl hover:border-insight-blue transition-all"
-          >
-            <div className="flex justify-between items-start mb-4">
-              <h3 className="text-xl font-bold text-gray-100 group-hover:text-insight-blue transition-colors">{ind.industry.replace(/_/g, ' ')}</h3>
-              <span className="bg-insight-purple/20 text-insight-purple text-xs font-bold px-2 py-1 rounded-full border border-insight-purple/30">
-                Rank #{ind.rank || idx + 1}
+            className="group block p-6 bg-gradient-to-br from-insight-card to-insight-dark border border-insight-border rounded-2xl hover:border-insight-blue transition-all">
+          
+           <div className="flex justify-between items-start mb-4 gap-4">
+          <h3 className="text-xl font-bold text-gray-100 group-hover:text-insight-blue transition-colors">
+            {ind.industry.replace(/_/g, ' ')}
+          </h3>
+          
+          {/* Added shrink-0 and whitespace-nowrap to prevent the badge from squishing */}
+          <span className="shrink-0 whitespace-nowrap bg-insight-blue/20 text-insight-blue text-xs font-bold px-3 py-1 rounded-full border border-insight-blue/30">
+            Rank #{ind.rank || idx + 1}
+          </span>
+        </div>
+           <div className="flex items-center gap-2">
+              <span className="text-gray-400 text-sm">Z-Score:</span>
+              <span className="text-gray-100 font-bold text-lg">
+                {ind.final_industry_zscore !== undefined ? ind.final_industry_zscore.toFixed(4) : 'N/A'}
               </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-gray-400 text-sm">Overall Score:</span>
-              <span className="text-gray-100 font-bold text-lg">{ind.overall_score || 'N/A'}</span>
             </div>
           </Link>
         ))}
