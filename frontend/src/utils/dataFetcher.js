@@ -54,3 +54,11 @@ export async function fetchLiveNews(symbol) {
     return [];
   }
 }
+
+export async function triggerPipeline(symbol) {
+  const res = await fetch(`${API_BASE_URL}/api/pipeline/${symbol.toUpperCase()}`, {
+    method: 'POST'
+  });
+  if (!res.ok) throw new Error('Failed to trigger pipeline');
+  return res.json();
+}
