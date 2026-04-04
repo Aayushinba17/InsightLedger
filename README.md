@@ -20,6 +20,9 @@ cd frontend
 npm i
 npm run dev 
 
+To run the mcp server:
+refer to mcp_server/run_mcp.md
+
 
  Key Features
 
