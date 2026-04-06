@@ -58,16 +58,16 @@ def zscore_across(industry_scores):
     Caps scores at -3 and 3 to prevent extreme outliers from breaking averages.
     """
     valid_scores = [v for v in industry_scores.values() if v is not None]
-    
+
     if len(valid_scores) < 2:
         return {k: (0.0 if v is not None else None) for k, v in industry_scores.items()}
-        
+
     mean_val = statistics.mean(valid_scores)
     stdev_val = statistics.stdev(valid_scores)
-    
+
     if stdev_val == 0:
         return {k: (0.0 if v is not None else None) for k, v in industry_scores.items()}
-        
+
     result = {}
     for k, v in industry_scores.items():
         if v is None:
@@ -76,7 +76,7 @@ def zscore_across(industry_scores):
             z = (v - mean_val) / stdev_val
             z = max(-3.0, min(3.0, z))
             result[k] = z
-            
+
     return result
 
 
@@ -104,12 +104,14 @@ def extract_company_metrics(data):
     promoter_holding = safe_float(recent.get("Promoter holding"))
     promoter_change = safe_float(recent.get("Change in promoter holding"))
     dividend_yield = safe_float(recent.get("Dividend yield"))
-    total_shareholders = safe_float(data.get("stockholder_details", {}).get("total_shareholders_count"))
+    total_shareholders = safe_float(
+        data.get("stockholder_details", {}).get("total_shareholders_count"))
     debt_to_equity = safe_float(recent.get("Debt to equity"))
     current_ratio = safe_float(recent.get("Current ratio"))
     interest_coverage = safe_float(recent.get("Interest Coverage Ratio"))
 
-    gov_flags = data.get("governance_signals", {}).get("governance_red_flags", {})
+    gov_flags = data.get("governance_signals", {}).get(
+        "governance_red_flags", {})
     red_flag_count = sum(1 for v in gov_flags.values() if v is True)
 
     risk_counts = {"high": 0, "medium": 0, "low": 0}
@@ -153,9 +155,11 @@ def aggregate_industry(symbols, all_companies):
     avg_cy = mean_of([m["cy"] for m in company_metrics])
     avg_rp = mean_of([m["rp"] for m in company_metrics])
     avg_bg = mean_of([m["bg"] for m in company_metrics])
-    
-    composite_parts = [v for v in [avg_bq, avg_cy, avg_rp, avg_bg] if v is not None]
-    industry_composite = sum(composite_parts) / len(composite_parts) if composite_parts else None
+
+    composite_parts = [v for v in [
+        avg_bq, avg_cy, avg_rp, avg_bg] if v is not None]
+    industry_composite = sum(composite_parts) / \
+        len(composite_parts) if composite_parts else None
 
     # --- Pass-through Quant Data for UI ---
     return {
@@ -197,53 +201,68 @@ def aggregate_industry(symbols, all_companies):
 
 def compute_dimension_scores(industry_data_map):
     """
-    Computes Z-SCORES across all industries STRICTLY using the LLM-generated scores
-    (BQ, CY, RP, BG). Quantitative metrics are ignored for the final ranking per mentor request.
+    Computes Z-SCORES across all industries using ONLY LLM scores (BQ, CY, RP, BG).
+    AFTER computing the final Z-score, we apply a confidence multiplier based on
+    the number of companies in that industry (per mentor discussion).
     """
     industries = list(industry_data_map.keys())
-    
-    # 1. Extract Raw LLM Scores per Industry
-    raw_bq = {ind: d["llm_scores"]["avg_bq"] for ind, d in industry_data_map.items()}
-    raw_cy = {ind: d["llm_scores"]["avg_cy"] for ind, d in industry_data_map.items()}
-    raw_rp = {ind: d["llm_scores"]["avg_rp"] for ind, d in industry_data_map.items()}
-    raw_bg = {ind: d["llm_scores"]["avg_bg"] for ind, d in industry_data_map.items()}
-    
-    # 2. Z-SCORE Normalization
-    norm_bq = zscore_across(raw_bq)            
-    norm_cy = zscore_across(raw_cy)            
+
+    # 1. Extract Raw LLM Scores
+    raw_bq = {ind: d["llm_scores"]["avg_bq"]
+              for ind, d in industry_data_map.items()}
+    raw_cy = {ind: d["llm_scores"]["avg_cy"]
+              for ind, d in industry_data_map.items()}
+    raw_rp = {ind: d["llm_scores"]["avg_rp"]
+              for ind, d in industry_data_map.items()}
+    raw_bg = {ind: d["llm_scores"]["avg_bg"]
+              for ind, d in industry_data_map.items()}
+
+    # 2. Z-Score Normalization per dimension
+    norm_bq = zscore_across(raw_bq)
+    norm_cy = zscore_across(raw_cy)
     norm_rp = zscore_across(raw_rp)
     norm_bg = zscore_across(raw_bg)
-    
-    # 3. Pure LLM Weighted Overall Score (25% each)
+
+    # 3. Squashed Composite (25% each)
     squashed_z_scores = {}
     for ind in industries:
-        parts = [
-            norm_bq.get(ind), 
-            norm_cy.get(ind), 
-            norm_rp.get(ind), 
-            norm_bg.get(ind)
-        ]
-        
+        parts = [norm_bq.get(ind), norm_cy.get(
+            ind), norm_rp.get(ind), norm_bg.get(ind)]
         valid_parts = [p for p in parts if p is not None]
-        squashed_z_scores[ind] = sum(valid_parts) / len(valid_parts) if valid_parts else 0.0
-    
-    # 4. Re-standardize into true final Z-scores
-    overall_scores_zscore = zscore_across(squashed_z_scores)
-    
-    # 5. Ranking
-    sorted_industries = sorted(overall_scores_zscore.items(), key=lambda x: x[1] if x[1] is not None else float('-inf'), reverse=True)
-    
+        squashed_z_scores[ind] = sum(
+            valid_parts) / len(valid_parts) if valid_parts else 0.0
+
+    # 4. Final Z-Score (second normalization pass)
+    overall_zscore = zscore_across(squashed_z_scores)
+
+    # 5. === NEW: Apply Confidence Multiplier based on company_count ===
+    final_scores = {}
     rankings = {}
+
+    for ind in industries:
+        n = industry_data_map[ind].get("company_count", 1)
+        # n=1 → 0.1, n=3 → 0.3, n=10 → 1.0
+        confidence = min(1.0, n / 10.0)
+
+        raw_z = overall_zscore.get(ind, 0.0)
+        final_z = raw_z * confidence             # ← This is the discount
+
+        final_scores[ind] = round(final_z, 4)
+
+    # 6. Ranking (using the confidence-adjusted final Z-score)
+    sorted_industries = sorted(
+        final_scores.items(), key=lambda x: x[1], reverse=True)
+
     prev_score = None
     prev_rank = 0
     for i, (ind, score) in enumerate(sorted_industries):
-        if prev_score is not None and math.isclose(score if score is not None else 0, prev_score, rel_tol=1e-5):
+        if prev_score is not None and math.isclose(score, prev_score, rel_tol=1e-5):
             rankings[ind] = prev_rank
         else:
             rankings[ind] = i + 1
-        prev_score = score if score is not None else 0
+        prev_score = score
         prev_rank = rankings[ind]
-    
+
     return {
         "llm_z_scores": {
             ind: {
@@ -254,8 +273,10 @@ def compute_dimension_scores(industry_data_map):
             }
             for ind in industries
         },
-        "overall_industry_zscore": {ind: round(overall_scores_zscore.get(ind) or 0, 4) for ind in industries},
+        "overall_industry_zscore": final_scores,      # ← Now confidence-adjusted
         "rankings": rankings,
+        "confidence": {ind: round(min(1.0, industry_data_map[ind]["company_count"] / 10.0), 2)
+                       for ind in industries}
     }
 
 
@@ -269,7 +290,7 @@ def run_industry_evaluation():
     print("=" * 60)
 
     all_companies = {}
-    
+
     for company_folder in INSIGHTS_DIR.iterdir():
         if company_folder.is_dir():
             sym = company_folder.name
@@ -329,7 +350,10 @@ def run_industry_evaluation():
             "company_count": industry_data[ind]["company_count"],
             "companies": industry_data[ind]["companies"],
             "fundamental_score": industry_data[ind]["llm_scores"]["industry_fundamental_score"],
+            # confidence-adjusted
             "final_industry_zscore": scoring["overall_industry_zscore"][ind],
+            # ← NEW
+            "confidence": scoring["confidence"][ind],
             "rank": scoring["rankings"][ind]
         }
         summary_entries.append(entry)
@@ -349,7 +373,8 @@ def run_industry_evaluation():
         print(f"     #{entry['rank']:>2}  {entry['industry'].replace('_', ' '):<40}  "
               f"Z-Score: {entry['final_industry_zscore']:>7.4f}  (Score: {entry['fundamental_score']})")
 
-    print(f"\n  ✅ Saved {len(industry_data)} industry evaluations + master summary.")
+    print(
+        f"\n  ✅ Saved {len(industry_data)} industry evaluations + master summary.")
     return True
 
 
