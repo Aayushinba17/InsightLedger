@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Globe, TrendingUp } from 'lucide-react';
 import Table from '../components/Table';
 import { fetchIndexScores, fetchAllSectors } from '../utils/dataFetcher';
@@ -8,8 +8,9 @@ import { fetchIndexScores, fetchAllSectors } from '../utils/dataFetcher';
 export default function IndexDashboard() {
     const [indexData, setIndexData] = useState([]);
     const [loading, setLoading] = useState(true);
+    const navigate = useNavigate();
 
-useEffect(() => {
+    useEffect(() => {
         const loadIndexData = async () => {
             try {
                 // Fetch BOTH the company scores AND the sector schemas at the same time
@@ -26,7 +27,7 @@ useEffect(() => {
 
                 // 1. Build a BULLETPROOF lookup dictionary
                 const industryMap = {};
-                
+
                 if (sectorsData && Array.isArray(sectorsData)) {
                     sectorsData.forEach(sector => {
                         const indName = sector.industry ? sector.industry.replace(/_/g, ' ') : null;
@@ -38,7 +39,7 @@ useEffect(() => {
                                 if (item.company) industryMap[item.company.toUpperCase()] = indName;
                             });
                         }
-                        
+
                         // Check Path 2: Nested inside rankings (From your earlier CompanyDashboard code)
                         if (sector.rankings?.fundamental_investor && Array.isArray(sector.rankings.fundamental_investor)) {
                             sector.rankings.fundamental_investor.forEach(item => {
@@ -66,13 +67,13 @@ useEffect(() => {
                     .map(item => {
                         // Ensure we check the map using UPPERCASE to avoid mismatch bugs
                         const safeSymbol = (item.symbol || '').toUpperCase();
-                        
+
                         return {
                             name: item.symbol,
                             industry: industryMap[safeSymbol] || 'Unclassified',
                             score: parseFloat(item.fundamental_score).toFixed(2),
-                            val: !isNaN(parseFloat(item.z_score)) 
-                                ? parseFloat(item.z_score).toFixed(4) 
+                            val: !isNaN(parseFloat(item.z_score))
+                                ? parseFloat(item.z_score).toFixed(4)
                                 : 'N/A'
                         };
                     });
@@ -100,25 +101,25 @@ useEffect(() => {
     // ADDED: Define the columns for this specific table
     // ==========================================
     const indexColumns = [
-        { 
-            header: 'Company Name', 
+        {
+            header: 'Company Name',
             accessor: 'name',
             // Custom render function makes the symbol bold and white
             render: (row) => <span className="font-bold text-gray-100">{row.name}</span>
         },
-        { 
-            header: 'Industry', 
-            accessor: 'industry' 
+        {
+            header: 'Industry',
+            accessor: 'industry'
         },
-        { 
-            header: 'Fund. Score', 
+        {
+            header: 'Fund. Score',
             accessor: 'score',
             align: 'center',
             // Custom render function gives it a techy monospace font
             render: (row) => <span className="font-mono text-gray-300">{row.score}</span>
         },
-        { 
-            header: 'Global Z-Score', 
+        {
+            header: 'Global Z-Score',
             accessor: 'val',
             align: 'center',
             // Custom render function makes the Z-score pop with insight-blue
@@ -162,7 +163,11 @@ useEffect(() => {
                 </div>
 
                 {/* ADDED: Pass the columns array into the Table component */}
-                <Table columns={indexColumns} data={indexData} />
+                <Table
+                    columns={indexColumns}
+                    data={indexData}
+                    onRowClick={(row) => navigate(`/company/${row.name}`)}
+                />
             </section>
         </div>
     );
