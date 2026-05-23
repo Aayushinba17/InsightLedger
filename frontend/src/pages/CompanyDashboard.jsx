@@ -572,7 +572,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { fetchQualitativeAnalysis, fetchAllSectors, fetchLiveNews } from '../utils/dataFetcher';
+import { fetchQualitativeAnalysis, fetchAllSectors, fetchLiveNews, triggerPipeline } from '../utils/dataFetcher';
 import TagBadge from '../components/TagBadge';
 import ScoreCard from '../components/ScoreCard';
 import MetricCard from '../components/MetricCard';
@@ -583,6 +583,8 @@ import { generateContradiction } from '../utils/contradictionEngine';
 
 export default function CompanyDashboard() {
   const { symbol } = useParams();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingMessage, setProcessingMessage] = useState('Initializing AI Analysis...');
 
   // Derive once — avoids re-creating on every render
   const symbolUpper = symbol?.toUpperCase() ?? '';
@@ -600,31 +602,73 @@ export default function CompanyDashboard() {
     if (!symbolUpper) return;
 
     let cancelled = false;
-    setLoading(true);
-    setError(null);
+    let pollTimer = null;
 
-    Promise.all([
-      fetchQualitativeAnalysis(symbolUpper),
-      fetchAllSectors(),
-    ])
-      .then(([companyRes, sectorsRes]) => {
+    const loadData = async (isPolling = false) => {
+      if (!isPolling) {
+        setLoading(true);
+        setError(null);
+      }
+
+      try {
+        const [companyRes, sectorsRes] = await Promise.all([
+          fetchQualitativeAnalysis(symbolUpper),
+          fetchAllSectors(),
+        ]);
+
         if (cancelled) return;
-        setData(companyRes);
 
-        const targetIndustry = sectorsRes.find(ind =>
-          ind?.rankings?.fundamental_investor?.some(c => c.company === symbolUpper)
-        );
-        if (targetIndustry?.rankings) setIndustryRankings(targetIndustry.rankings);
-        setLoading(false);
-      })
-      .catch((err) => {
+        if (companyRes.status === 'success') {
+          setData(companyRes.data);
+          setIsProcessing(false);
+          
+          const targetIndustry = sectorsRes.find(ind =>
+            ind?.rankings?.fundamental_investor?.some(c => c.company === symbolUpper)
+          );
+          if (targetIndustry?.rankings) setIndustryRankings(targetIndustry.rankings);
+          setLoading(false);
+        } 
+        else if (companyRes.status === 'processing') {
+          setIsProcessing(true);
+          setLoading(false);
+          setProcessingMessage('AI is currently analyzing reports and fetching market data...');
+          // Poll again in 5 seconds
+          pollTimer = setTimeout(() => loadData(true), 5000);
+        }
+        else if (companyRes.status === 'not_found' && !isPolling) {
+          // Trigger pipeline automatically
+          setProcessingMessage('Company not found in database. Starting fresh AI Analysis...');
+          setIsProcessing(true);
+          setLoading(false);
+          
+          try {
+            await triggerPipeline(symbolUpper);
+            // After triggering, start polling
+            pollTimer = setTimeout(() => loadData(true), 3000);
+          } catch (err) {
+            console.error('Failed to trigger pipeline:', err);
+            setError('Failed to start analysis for ' + symbolUpper);
+            setIsProcessing(false);
+          }
+        }
+        else if (isPolling) {
+          // If we're polling and still not found/processing, keep polling
+          pollTimer = setTimeout(() => loadData(true), 5000);
+        }
+      } catch (err) {
         if (cancelled) return;
         console.error('[CompanyDashboard] Data fetch error:', err);
         setError(`Failed to load data for ${symbolUpper}.`);
         setLoading(false);
-      });
+      }
+    };
 
-    return () => { cancelled = true; };
+    loadData();
+
+    return () => { 
+      cancelled = true; 
+      if (pollTimer) clearTimeout(pollTimer);
+    };
   }, [symbolUpper]);
 
   // ── Fetch live news independently ─────────────────────────────────────────
@@ -649,12 +693,75 @@ export default function CompanyDashboard() {
     return () => { cancelled = true; };
   }, [symbolUpper]);
 
-  // ── Guard renders ─────────────────────────────────────────────────────────
   if (loading) {
-    return <div className="p-10 text-center text-gray-400">Loading Dashboard…</div>;
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-10 text-center gap-6 bg-insight-dark">
+        <div className="w-16 h-16 border-4 border-insight-blue border-t-transparent rounded-full animate-spin" />
+        <p className="text-gray-400 font-medium animate-pulse">Loading Dashboard...</p>
+      </div>
+    );
   }
+
+  if (isProcessing) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-10 text-center gap-8 bg-insight-dark relative overflow-hidden">
+        {/* Animated Background Elements */}
+        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-insight-blue/10 rounded-full blur-[100px] animate-pulse" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-insight-blue/5 rounded-full blur-[120px] animate-pulse delay-700" />
+        
+        <div className="relative z-10 flex flex-col items-center max-w-md">
+          <div className="relative mb-8">
+            <div className="w-24 h-24 border-b-4 border-l-4 border-insight-blue rounded-full animate-spin" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-12 h-12 border-t-4 border-r-4 border-insight-blue-soft rounded-full animate-spin-slow" />
+            </div>
+          </div>
+          
+          <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Processing {symbolUpper}</h2>
+          <p className="text-gray-400 text-sm leading-relaxed mb-6">{processingMessage}</p>
+          
+          <div className="w-full bg-gray-800 h-1.5 rounded-full overflow-hidden mb-2">
+            <div className="bg-gradient-to-r from-insight-blue to-insight-blue-soft h-full w-2/3 animate-progress-shimmer" />
+          </div>
+          
+          <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">
+            Insight Engine Active • Phase 1/3
+          </p>
+        </div>
+
+        <div className="mt-12 text-gray-600 text-xs text-left max-w-xs space-y-2">
+          <p className="flex items-center gap-2">
+            <span className="w-1 h-1 rounded-full bg-insight-blue" /> Fetching annual reports from NSE/BSE...
+          </p>
+          <p className="flex items-center gap-2">
+            <span className="w-1 h-1 rounded-full bg-insight-blue" /> Running Gemini AI qualitative extraction...
+          </p>
+          <p className="flex items-center gap-2 opacity-50">
+            <span className="w-1 h-1 rounded-full bg-gray-600" /> Calculating peer group rankings...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (error || !data) {
-    return <div className="p-10 text-center text-red-400">{error || 'Data not found.'}</div>;
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-10 text-center gap-6 bg-insight-dark">
+        <div className="bg-red-500/10 p-4 rounded-full border border-red-500/20">
+          <div className="text-red-500 text-4xl">⚠️</div>
+        </div>
+        <div className="max-w-md">
+          <h2 className="text-xl font-bold text-gray-100 mb-2">An error occurred</h2>
+          <p className="text-red-400 text-sm">{error || 'Data could not be found for ' + (symbolUpper || 'this company') + '.'}</p>
+        </div>
+        <Link 
+          to="/" 
+          className="px-6 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-full text-sm font-medium transition-colors border border-gray-700"
+        >
+          Return to Dashboard
+        </Link>
+      </div>
+    );
   }
 
   // ── Destructure company data ──────────────────────────────────────────────

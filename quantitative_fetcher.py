@@ -544,4 +544,5 @@ def fetch_yfinance_metrics(symbols, progress_callback=None):
 
 
 if __name__ == "__main__":
-    fetch_yfinance_metrics(["RELIANCE", "TCS"])
+    from symbols import get_nifty100_symbols
+    fetch_yfinance_metrics(get_nifty100_symbols())

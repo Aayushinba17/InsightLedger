@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
 from dotenv import load_dotenv
@@ -24,6 +24,9 @@ if not MONGO_URI:
 client = MongoClient(MONGO_URI, tlsAllowInvalidCertificates=True)
 db = client['insightledger']
 print("🟢 Successfully connected to MongoDB Atlas!")
+
+# --- NEW: TRACKING PROCESSING SYMBOLS IN MEMORY ---
+processing_symbols = set()
 
 # ============================
 # FASTAPI APP SETUP
@@ -181,11 +184,50 @@ def get_all_companies():
 
 @app.get("/api/company/{symbol}")
 def get_company(symbol: str):
-    data = db.companies.find_one({"symbol": symbol.upper()}, {"_id": 0})
+    sym = symbol.upper().strip()
+    
+    # 1. Check if we're currently processing it
+    if sym in processing_symbols:
+        return {"status": "processing", "symbol": sym}
+        
+    # 2. Check if it's already in the database
+    data = db.companies.find_one({"symbol": sym}, {"_id": 0})
     if not data:
-        raise HTTPException(
-            status_code=404, detail=f"Company {symbol} not found")
-    return data
+        return {"status": "not_found", "symbol": sym}
+        
+    return {"status": "success", "data": data}
+
+
+def run_pipeline_task(symbol: str):
+    """Background task to run the pipeline."""
+    from pipeline import run_pipeline
+    try:
+        print(f"🚀 [BACKGROUND] Starting pipeline for {symbol}...")
+        run_pipeline(manual_symbol=symbol)
+        print(f"✅ [BACKGROUND] Pipeline finished for {symbol}")
+    except Exception as e:
+        print(f"❌ [BACKGROUND] Pipeline failed for {symbol}: {e}")
+    finally:
+        if symbol in processing_symbols:
+            processing_symbols.remove(symbol)
+
+
+@app.post("/api/pipeline/{symbol}")
+async def trigger_pipeline(symbol: str, background_tasks: BackgroundTasks):
+    sym = symbol.upper().strip()
+    
+    # Check if already in database
+    exists = db.companies.find_one({"symbol": sym}, {"_id": 0})
+    if exists:
+        return {"status": "already_exists", "symbol": sym}
+
+    if sym in processing_symbols:
+        return {"status": "already_processing", "symbol": sym}
+
+    processing_symbols.add(sym)
+    background_tasks.add_task(run_pipeline_task, sym)
+    
+    return {"status": "started", "symbol": sym}
 
 
 @app.get("/api/sectors")
